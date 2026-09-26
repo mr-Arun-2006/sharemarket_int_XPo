@@ -1,0 +1,2 @@
+import { AppShell } from "../../../components/AppShell"; import { SectionPage } from "../../../components/SectionPage";
+export default function AIHistoryPage() { return <AppShell><SectionPage eyebrow="AI Intelligence / History" title="Analysis history" description="Search and filter saved analyses by symbol, analysis type, date, language, source, regime, indicator and result status." /><section className="panel"><div className="empty">Saved analyses will appear here.</div></section></AppShell>; }
