@@ -1,13 +1,33 @@
 from datetime import datetime, timezone
+import hmac
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from app.db.mongo import get_database
+from app.api.deps.auth import get_current_user, require_permission
+from app.core.config import settings
 from app.services.live_hub import live_hub
 from app.services.alert_engine import evaluate_live_tick
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
+
+async def require_live_ingest(
+    x_live_ingest_key: str | None = Header(default=None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if settings.live_ingest_api_key:
+        if x_live_ingest_key and hmac.compare_digest(x_live_ingest_key, settings.live_ingest_api_key):
+            return {"service": True, "user": user}
+        raise HTTPException(403, "Invalid live-ingest service key")
+    if user.get("role") == "admin":
+        return {"service": False, "user": user}
+    role = await get_database().roles.find_one({"name": user.get("role")})
+    permissions = set(role.get("permissions", [])) if role else set()
+    if "*" in permissions or "admin.data.manage" in permissions:
+        return {"service": False, "user": user}
+    raise HTTPException(403, "Live ingestion permission is required")
+
 
 
 class LiveTickRequest(BaseModel):
@@ -30,7 +50,7 @@ async def live_status():
 
 
 @router.post("/ingest")
-async def ingest_tick(payload: LiveTickRequest):
+async def ingest_tick(payload: LiveTickRequest, _: dict = Depends(require_live_ingest)):
     now = datetime.now(timezone.utc)
     document = payload.model_dump()
     document.update({"data_type": "live", "as_of": now})
