@@ -1,6 +1,14 @@
-from fastapi import FastAPI
+import json
+import logging
+import time
+from uuid import uuid4
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+
 from app.core.config import settings
 from app.db.mongo import mongo_lifespan
 from app.api.routes.auth import router as auth_router
@@ -20,9 +28,111 @@ from app.api.routes.context import router as context_router
 from app.api.routes.fundamentals import router as fundamentals_router
 from app.api.routes.strategies import router as strategies_router
 
-app = FastAPI(title="ShareM Int Xpo API", version="1.0.0", lifespan=mongo_lifespan)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
-app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
+logger = logging.getLogger("sharem.api")
+
+app = FastAPI(
+    title="ShareM Int Xpo API",
+    version="1.1.0",
+    lifespan=mongo_lifespan,
+)
+
+
+def _request_id(value: str | None) -> str:
+    if value and len(value) <= 64 and all(ch.isalnum() or ch in "-_" for ch in value):
+        return value
+    return uuid4().hex
+
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.allowed_host_list,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    expose_headers=["X-Request-ID"],
+)
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    request_id = _request_id(request.headers.get("x-request-id"))
+    request.state.request_id = request_id
+    started = time.perf_counter()
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        # The exception handler below creates the safe public response.
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        logger.exception(
+            json.dumps(
+                {
+                    "event": "request_failed",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "duration_ms": duration_ms,
+                }
+            )
+        )
+        raise
+
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        json.dumps(
+            {
+                "event": "request_completed",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+            }
+        )
+    )
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", uuid4().hex)
+    logger.exception(
+        json.dumps(
+            {
+                "event": "unhandled_exception",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "error_type": type(exc).__name__,
+            }
+        )
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception(request: Request, exc: RequestValidationError):
+    request_id = getattr(request.state, "request_id", uuid4().hex)
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Request validation failed",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
 
 
 app.include_router(auth_router)
@@ -42,13 +152,20 @@ app.include_router(context_router)
 app.include_router(fundamentals_router)
 app.include_router(strategies_router)
 
+
 @app.middleware("http")
 async def security_headers(request, call_next):
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=()",
+    )
     if settings.app_env.lower() == "production":
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
     return response
