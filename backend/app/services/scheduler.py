@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+from uuid import uuid4
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from app.core.config import settings
 from app.services.remote_ingestion import ingest_remote_eod, ingest_nse_eod_from_portal
@@ -30,7 +33,7 @@ async def _record_failure(dataset: str, exchange: str, trade_date, source: str, 
     })
 
 
-async def run_scheduled_ingestion() -> dict:
+async def _run_scheduled_ingestion() -> dict:
     results = []
     today = datetime.now(IST).date()
     # NSE is downloaded through its official All Reports portal.
@@ -86,6 +89,33 @@ async def run_scheduled_ingestion() -> dict:
             results.append({"dataset": kind, "status": "failed", "error": str(exc)})
     return {"trade_date": today.isoformat(), "results": results}
 
+
+
+SCHEDULER_INSTANCE_ID = str(uuid4())
+
+async def run_scheduled_ingestion() -> dict:
+    db = get_database()
+    now = datetime.now(ZoneInfo("UTC"))
+    lock_name = "eod-market-ingestion"
+    try:
+        lock = await db.scheduler_locks.find_one_and_update(
+            {
+                "lock_name": lock_name,
+                "$or": [{"expires_at": {"$lte": now}}, {"owner_id": SCHEDULER_INSTANCE_ID}],
+            },
+            {"$set": {"owner_id": SCHEDULER_INSTANCE_ID, "expires_at": now + timedelta(minutes=10), "updated_at": now}, "$setOnInsert": {"created_at": now}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0, "owner_id": 1},
+        )
+    except DuplicateKeyError:
+        return {"status": "locked", "lock_name": lock_name}
+    if not lock or lock.get("owner_id") != SCHEDULER_INSTANCE_ID:
+        return {"status": "locked", "lock_name": lock_name}
+    try:
+        return await _run_scheduled_ingestion()
+    finally:
+        await db.scheduler_locks.delete_one({"lock_name": lock_name, "owner_id": SCHEDULER_INSTANCE_ID})
 
 def start_scheduler() -> None:
     if not settings.data_scheduler_enabled or scheduler.running:
