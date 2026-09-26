@@ -19,7 +19,7 @@ async def ingest_context(
     current_user: dict = Depends(require_permission("admin.data.manage")),
 ):
     if kind not in {"sector", "institutional", "event"}:
-        raise HTTPException(400, "kind must be sector, institutional or event")
+        raise HTTPException(400, "kind must be sector, institutional, event or holiday")
     data = await file.read()
     if not data:
         raise HTTPException(400, "Uploaded context file is empty")
