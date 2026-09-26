@@ -15,6 +15,19 @@ logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 scheduler = AsyncIOScheduler(timezone=IST)
 
+from app.db.mongo import get_database
+
+async def _record_failure(dataset: str, exchange: str, trade_date, source: str, error: str) -> None:
+    await get_database().ingestion_runs.insert_one({
+        "dataset": dataset,
+        "exchange": exchange,
+        "trade_date": trade_date.isoformat(),
+        "source": source,
+        "status": "failed",
+        "error": error[:2000],
+        "fetched_at": datetime.now(IST),
+    })
+
 
 async def run_scheduled_ingestion() -> dict:
     results = []
@@ -31,6 +44,7 @@ async def run_scheduled_ingestion() -> dict:
             results.append(await ingest_remote_eod(exchange, template, today))
         except Exception as exc:
             logger.exception("%s EOD ingestion failed", exchange)
+            await _record_failure("eod_market_data", exchange, today, template, str(exc))
             results.append({"exchange": exchange, "status": "failed", "error": str(exc)})
 
     for exchange, template in [("NSE", settings.nse_index_url_template), ("BSE", settings.bse_index_url_template)]:
@@ -41,6 +55,7 @@ async def run_scheduled_ingestion() -> dict:
             results.append(await ingest_remote_index(template, exchange, today))
         except Exception as exc:
             logger.exception("%s index ingestion failed", exchange)
+            await _record_failure("index_data", exchange, today, template, str(exc))
             results.append({"exchange": exchange, "dataset": "index_data", "status": "failed", "error": str(exc)})
     return {"trade_date": today.isoformat(), "results": results}
 
