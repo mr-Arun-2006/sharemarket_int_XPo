@@ -9,6 +9,8 @@ from app.api.deps.auth import get_current_user, require_permission
 from app.core.config import settings
 from app.services.live_hub import live_hub
 from app.services.live_market import get_relevant_live_quotes, process_live_tick
+from app.services.live_provider import live_provider
+from app.services.redis_live import redis_live_broker
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
 
@@ -46,6 +48,10 @@ async def live_status():
         "status": "connected" if live_hub.client_count else "idle",
         "clients": live_hub.client_count,
         "transport": "websocket",
+        "provider_configured": bool(settings.live_provider_url),
+        "provider_running": live_provider.running,
+        "redis_configured": bool(settings.redis_url),
+        "redis_connected": redis_live_broker.client is not None,
     }
 
 
