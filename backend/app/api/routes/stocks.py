@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.db.mongo import get_database
 from app.schemas.market import EODRecord
 from app.services.technical import compute_technical_snapshot
+from app.services.fundamentals import get_fundamental_snapshot
 
 router = APIRouter(prefix="/api/v1/stocks", tags=["stocks"])
 
@@ -34,4 +35,5 @@ async def get_stock(symbol: str, exchange: str = Query(default="NSE", pattern="^
         except Exception: pass
     if not records: raise HTTPException(422, "Stored stock data is invalid")
     technical = compute_technical_snapshot(records); latest = records[-1]
-    return {"exchange": exchange, "symbol": symbol, "name": latest.name, "latest": {"trade_date": latest.trade_date, "close": latest.close, "previous_close": latest.previous_close, "change_pct": _pct(latest.close, latest.previous_close), "volume": latest.volume, "turnover": latest.turnover, "trades": latest.trades, "data_status": "eod"}, "technical": technical.__dict__, "history": [{"trade_date": r.trade_date, "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume, "change_pct": _pct(r.close, r.previous_close), "data_status": "eod"} for r in records]}
+    fundamentals = await get_fundamental_snapshot(symbol)
+    return {"exchange": exchange, "symbol": symbol, "name": latest.name, "latest": {"trade_date": latest.trade_date, "close": latest.close, "previous_close": latest.previous_close, "change_pct": _pct(latest.close, latest.previous_close), "volume": latest.volume, "turnover": latest.turnover, "trades": latest.trades, "data_status": "eod"}, "technical": technical.__dict__, "fundamentals": fundamentals, "fundamentals_status": "available" if fundamentals else "missing", "history": [{"trade_date": r.trade_date, "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume, "change_pct": _pct(r.close, r.previous_close), "data_status": "eod"} for r in records]}
