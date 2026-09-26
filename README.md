@@ -82,3 +82,16 @@ Admin controls:
 GET  /api/v1/admin/data-pipeline/status
 POST /api/v1/admin/data-pipeline/run
 ```
+
+
+## Current official NSE data connection
+
+The default NSE EOD source is configured for the current UDiFF cash-market bhavcopy pattern:
+
+https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip
+
+NSE's current reports page lists CM-UDiFF Common Bhavcopy Final (zip) and states that the older CM Bhavcopy CSV reports were discontinued from July 8, 2024. Reference: NSE All Reports.
+
+The scheduler also uses NSE's official FII/FPI & DII JSON endpoint at https://www.nseindia.com/api/fiidiiTradeReact with a primed NSE session, storing only the requested trading date. The current NSE FII/DII report exposes Buy Value, Sell Value and Net Value for FII/FPI and DII.
+
+BSE EOD data remains configuration-driven because BSE's official information-products tariff lists EOD Bhavcopy as a paid product; the repository does not bypass that access model.
