@@ -9,6 +9,7 @@ from app.api.routes.market import router as market_router
 from app.api.routes.intelligence import router as intelligence_router
 from app.api.routes.live import router as live_router
 from app.api.routes.sessions import router as sessions_router
+from app.api.routes.admin import router as admin_router
 
 app = FastAPI(
     title="ShareM Int Xpo API",
@@ -34,3 +35,4 @@ app.include_router(market_router)
 app.include_router(intelligence_router)
 app.include_router(live_router)
 app.include_router(sessions_router)
+app.include_router(admin_router)
