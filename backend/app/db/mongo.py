@@ -45,6 +45,7 @@ async def _ensure_indexes() -> None:
     )
     await db.scheduler_locks.create_index("lock_name", unique=True, name="scheduler_lock_unique")
     await db.scheduler_locks.create_index("expires_at", expireAfterSeconds=0, name="scheduler_lock_expiry_ttl")
+    await db.exchange_holidays.create_index([("exchange", 1), ("date", 1)], unique=True, name="exchange_holiday_unique")
 
 
 def get_mongo_client() -> AsyncMongoClient:
