@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "../../../components/AppShell";
-import { apiFetch } from "../../../lib/api";
+import { apiDownload, apiFetch } from "../../../lib/api";
 
 type Section={status:string;diagnosis?:string|null;summary?:string;key_reasons?:string[];symbol?:string;latest?:{trade_date:string;close:number|null;change_pct:number|null};technical?:Record<string,number|null|undefined>;evidence?:unknown[]};
 type Analysis={
@@ -33,6 +33,23 @@ export default function MarketAIPage(){
     finally{setLoading(false);}
   }
   const status=(s?:Section)=>s?.status==="missing"?"Missing source data":"Available";
+  async function exportPdf() {
+    if (!analysis) return;
+    setError("");
+    try {
+      const created = await apiFetch<{report_id:string}>("/api/v1/reports/from-analysis/" + encodeURIComponent(analysis.analysis_id), { method: "POST" });
+      const blob = await apiDownload("/api/v1/reports/" + encodeURIComponent(created.report_id) + "/pdf");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = created.report_id + ".pdf";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "PDF export failed");
+    }
+  }
+
 
   useEffect(()=>{
     if(!historicalId) return;
@@ -50,7 +67,7 @@ export default function MarketAIPage(){
     </form>{error&&<div className="error">{error}</div>}</section>
 
     {analysis&&<section className="analysis-grid">
-      <article className="panel full"><div className="eyebrow">Overall Diagnosis</div><h2>{analysis.hierarchy.market?.diagnosis??analysis.regime.label}</h2><p className="muted">{analysis.hierarchy.market?.summary}</p><div className="evidence-list">{(analysis.hierarchy.market?.key_reasons??analysis.regime.reasons).map((x,i)=><div key={i}>{x}</div>)}</div></article>
+      <article className="panel full"><div className="section-title"><div><div className="eyebrow">Overall Diagnosis</div></div><button className="button primary" onClick={exportPdf}>Export PDF</button></div><h2>{analysis.hierarchy.market?.diagnosis??analysis.regime.label}</h2><p className="muted">{analysis.hierarchy.market?.summary}</p><div className="evidence-list">{(analysis.hierarchy.market?.key_reasons??analysis.regime.reasons).map((x,i)=><div key={i}>{x}</div>)}</div></article>
 
       <article className="panel"><div className="eyebrow">Market Evidence</div><div className="metric">{analysis.market_metrics.nse_stocks}</div><div className="muted">NSE records analysed</div><div className="stats-row"><span>Positive: {analysis.market_metrics.positive}</span><span>Negative: {analysis.market_metrics.negative}</span><span>Unchanged: {analysis.market_metrics.unchanged}</span><span>Breadth: {analysis.market_metrics.breadth_pct==null?"--":analysis.market_metrics.breadth_pct.toFixed(2)+"%"}</span></div></article>
 
