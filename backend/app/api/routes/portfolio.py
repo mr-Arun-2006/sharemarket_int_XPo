@@ -10,6 +10,7 @@ from app.api.deps.auth import get_current_user, require_permission
 from app.db.mongo import get_database
 from app.services.audit import record_audit
 from app.services.portfolio import build_portfolio_snapshot
+from app.services.portfolio_intelligence import build_portfolio_intelligence
 
 router=APIRouter(prefix="/api/v1/portfolio",tags=["portfolio"])
 
@@ -129,3 +130,11 @@ async def add_transaction(portfolio_id:str,payload:TransactionCreate,current_use
 async def portfolio_risk(portfolio_id:str,current_user:dict=Depends(get_current_user)):
     snapshot=await get_portfolio(portfolio_id,current_user)
     return {"portfolio_id":portfolio_id,"risk":snapshot["risk"],"concentration":snapshot["summary"]["top_holding_allocation_pct"],"data_status":snapshot["data_status"]}
+
+
+@router.get("/{portfolio_id}/intelligence")
+async def portfolio_intelligence(portfolio_id: str, current_user: dict = Depends(require_permission("analysis.basic"))):
+    try:
+        return await build_portfolio_intelligence(portfolio_id, current_user["user_id"])
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
