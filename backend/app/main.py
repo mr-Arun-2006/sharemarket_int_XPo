@@ -7,8 +7,13 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
 from app.api.routes.market import router as market_router
 from app.api.routes.intelligence import router as intelligence_router
+from app.api.routes.live import router as live_router
 
-app = FastAPI(title="ShareM Int Xpo API", version="1.0.0", lifespan=mongo_lifespan)
+app = FastAPI(
+    title="ShareM Int Xpo API",
+    version="1.0.0",
+    lifespan=mongo_lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,3 +31,4 @@ app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(market_router)
 app.include_router(intelligence_router)
+app.include_router(live_router)
