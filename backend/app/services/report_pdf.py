@@ -182,6 +182,25 @@ def build_report_pdf(report: dict) -> bytes:
             ("Max drawdown %", technical.get("max_drawdown_pct")),
         ], styles_map))
 
+        fundamentals = selected.get("fundamentals")
+        if fundamentals:
+            story.append(_para("Fundamental Snapshot", styles_map["h3"]))
+            story.append(_kv_table([
+                ("As of", fundamentals.get("as_of")),
+                ("Market Cap", fundamentals.get("market_cap")),
+                ("Enterprise Value", fundamentals.get("enterprise_value")),
+                ("Revenue", fundamentals.get("revenue")),
+                ("Net Income", fundamentals.get("net_income")),
+                ("EPS", fundamentals.get("eps")),
+                ("P/E", fundamentals.get("pe")),
+                ("P/B", fundamentals.get("pb")),
+                ("ROE %", fundamentals.get("roe_pct")),
+                ("ROCE %", fundamentals.get("roce_pct")),
+                ("Debt / Equity", fundamentals.get("debt_to_equity")),
+                ("Dividend Yield %", fundamentals.get("dividend_yield_pct")),
+                ("Source", fundamentals.get("source_url") or fundamentals.get("source")),
+            ], styles_map))
+
         story.append(_para("Additional Context", styles_map["h2"]))
         context_for_stock = report.get("context_snapshot") or {}
         additional = [
