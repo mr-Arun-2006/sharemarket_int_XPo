@@ -8,7 +8,7 @@ from app.db.mongo import get_database
 from app.api.deps.auth import get_current_user, require_permission
 from app.core.config import settings
 from app.services.live_hub import live_hub
-from app.services.alert_engine import evaluate_live_tick
+from app.services.live_market import get_relevant_live_quotes, process_live_tick
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
 
@@ -51,26 +51,16 @@ async def live_status():
 
 @router.post("/ingest")
 async def ingest_tick(payload: LiveTickRequest, _: dict = Depends(require_live_ingest)):
-    now = datetime.now(timezone.utc)
-    document = payload.model_dump()
-    document.update({"data_type": "live", "as_of": now})
+    return await process_live_tick(payload.model_dump())
 
-    db = get_database()
-    await db.market_data.insert_one(document)
 
-    triggered_alerts = await evaluate_live_tick(payload.model_dump())
-
-    await live_hub.publish({
-        "type": "market.tick",
-        "data": {
-            **payload.model_dump(),
-            "data_status": "live",
-            "as_of": now.isoformat(),
-        },
-    })
-
-    return {"status": "published", "symbol": payload.symbol.upper(), "triggered_alerts": triggered_alerts}
-
+@router.get("/relevant")
+async def relevant_live_quotes(
+    limit: int = 20,
+    _: dict = Depends(require_permission("market.read")),
+):
+    limit = max(1, min(limit, 100))
+    return {"quotes": await get_relevant_live_quotes(limit)}
 
 @router.websocket("/ws")
 async def market_websocket(websocket: WebSocket):
