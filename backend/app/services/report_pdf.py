@@ -182,12 +182,20 @@ def build_report_pdf(report: dict) -> bytes:
             ("Max drawdown %", technical.get("max_drawdown_pct")),
         ], styles_map))
 
-        story.append(_para("Fundamental / Institutional / News Sections", styles_map["h2"]))
-        story.append(_list_table([
+        story.append(_para("Additional Context", styles_map["h2"]))
+        context_for_stock = report.get("context_snapshot") or {}
+        additional = [
             "Fundamental financial-statement data is not included in the current EOD ingestion dataset.",
-            "Institutional activity data is not included in the current EOD ingestion dataset.",
-            "News and event evidence is not included in the current EOD ingestion dataset.",
-        ], styles_map))
+        ]
+        if context_for_stock.get("institutional_activity"):
+            additional.append("Institutional activity is included from the stored source dataset.")
+        else:
+            additional.append("Institutional activity data is not available for this analysis date.")
+        if context_for_stock.get("major_events"):
+            additional.append("Exchange/company event evidence is included from the stored source dataset.")
+        else:
+            additional.append("Exchange/company event evidence is not available for this analysis date.")
+        story.append(_list_table(additional, styles_map))
 
     context = report.get("context_snapshot") or {}
     sectors = context.get("sectors") or []
