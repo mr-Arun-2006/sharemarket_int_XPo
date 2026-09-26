@@ -43,6 +43,140 @@ async def fetch_source(url: str, timeout: float = 45.0) -> tuple[bytes, dict]:
         }
 
 
+
+async def fetch_nse_report(report_name: str, day: date) -> tuple[bytes, dict]:
+    """Download a dated report through NSE's official All Reports endpoint."""
+    import urllib.parse
+
+    archives = [{
+        "name": report_name,
+        "type": "daily-reports",
+        "category": "capital-market",
+        "section": "equities",
+    }]
+    archive_param = urllib.parse.quote(
+        __import__("json").dumps(archives, separators=(",", ":"))
+    )
+    report_date = day.strftime("%d-%b-%Y")
+    api_url = (
+        "https://www.nseindia.com/api/reports"
+        f"?archives={archive_param}&date={urllib.parse.quote(report_date)}"
+        "&type=equities&mode=single"
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; ShareM-Int-Xpo/1.0)",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.nseindia.com/all-reports",
+        "Connection": "keep-alive",
+    }
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=45.0,
+        headers=headers,
+    ) as client:
+        landing = await client.get("https://www.nseindia.com/all-reports")
+        landing.raise_for_status()
+        response = await client.get(api_url)
+        response.raise_for_status()
+        content = response.content
+        content_type = response.headers.get("content-type", "")
+        if not content:
+            raise ValueError("NSE report response was empty")
+        return content, {
+            "url": api_url,
+            "content_type": content_type,
+            "http_status": response.status_code,
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "bytes": len(content),
+            "report_name": report_name,
+        }
+
+
+async def ingest_nse_eod_from_portal(target_day: date | None = None) -> dict:
+    day = target_day or datetime.now(timezone.utc).date()
+    started = datetime.now(timezone.utc)
+    last_error = None
+    records = []
+    source_meta = {}
+    source_name = "CM-UDiFF Common Bhavcopy Final (zip)"
+
+    for offset in range(8):
+        candidate = day.fromordinal(day.toordinal() - offset)
+        try:
+            data, meta = await fetch_nse_report(source_name, candidate)
+            parsed = parse_exchange_eod(
+                data,
+                "NSE",
+                filename=source_name,
+            )
+            if not parsed:
+                raise ValueError("NSE All Reports returned no parseable EOD rows")
+            unique_dates = {r.trade_date for r in parsed}
+            if unique_dates != {candidate.isoformat()}:
+                raise ValueError(
+                    f"NSE report date mismatch: expected {candidate.isoformat()}, got {sorted(unique_dates)}"
+                )
+            records = parsed
+            source_meta = meta
+            break
+        except Exception as exc:
+            last_error = exc
+
+    if not records:
+        raise ValueError(f"NSE official portal unavailable for recent trading-day window: {last_error}")
+
+    document = build_ingestion_document(records, source=source_meta["url"], fetched_at=started)
+    db = get_database()
+    trade_date = document["trade_date"]
+    digest = source_meta["sha256"]
+
+    existing = await db.ingestion_runs.find_one(
+        {"exchange": "NSE", "trade_date": trade_date, "sha256": digest},
+        {"_id": 0, "ingestion_id": 1, "status": 1},
+    )
+    if existing:
+        return {
+            "exchange": "NSE",
+            "trade_date": trade_date,
+            "status": "already_ingested",
+            "ingestion_id": existing.get("ingestion_id"),
+        }
+
+    ingestion_id = hashlib.sha256(
+        f"NSE:{trade_date}:{digest}".encode()
+    ).hexdigest()[:32]
+    normalized = []
+    for record in records:
+        item = record.model_dump()
+        item.update({
+            "ingestion_id": ingestion_id,
+            "ingested_at": started,
+            "source": "NSE official All Reports portal",
+            "source_dataset": source_meta["url"],
+        })
+        normalized.append(item)
+
+    await db.eod_market_data.delete_many({"exchange": "NSE", "trade_date": trade_date})
+    await db.eod_market_data.insert_many(normalized, ordered=False)
+
+    result = {
+        "ingestion_id": ingestion_id,
+        "dataset": "eod_market_data",
+        "exchange": "NSE",
+        "trade_date": trade_date,
+        "source_url": source_meta["url"],
+        "report_name": source_name,
+        "sha256": digest,
+        "bytes": source_meta["bytes"],
+        "records_seen": document["records_seen"],
+        "records_missing_core_prices": document["records_missing_core_prices"],
+        "status": document["status"],
+        "fetched_at": started,
+    }
+    await db.ingestion_runs.insert_one(result)
+    return result
+
 async def ingest_remote_eod(exchange: str, url_template: str, target_day: date | None = None) -> dict:
     exchange = exchange.upper()
     if exchange not in {"NSE", "BSE"}:
