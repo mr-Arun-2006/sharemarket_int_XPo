@@ -141,11 +141,16 @@ async def exchange_comparison(_: dict = Depends(require_permission("market.read"
             })
         paired.sort(key=lambda x: abs(x["spread_pct"]), reverse=True)
 
+    index_rows = await db.index_data.find({"trade_date": {"$in": [d for d in (nse["trade_date"], bse["trade_date"]) if d]}}, {"_id": 0, "exchange": 1, "symbol": 1, "trade_date": 1, "close": 1, "previous_close": 1}).sort([("trade_date", -1)]).to_list(length=20)
+    index_performance = []
+    for row in index_rows:
+        index_performance.append({**row, "change_pct": _pct(row.get("close"), row.get("previous_close")), "data_status": "eod"})
+
     return {
         "generated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
         "exchanges": {"NSE": nse, "BSE": bse},
-        "index_performance": [],
-        "index_note": "Index series are not inferred from equity bhavcopy records. Index data will appear when index-source ingestion is enabled.",
+        "index_performance": index_performance,
+        "index_note": "Index values come only from dedicated index_data ingestion; equity bhavcopy records are not used as a substitute." ,
         "stock_level_comparison": {
             "matched_symbols": len(paired),
             "largest_change_spreads": paired[:20],
