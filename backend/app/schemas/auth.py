@@ -15,6 +15,21 @@ class LoginRequest(BaseModel):
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=40, max_length=256)
 
+class TwoFactorCodeRequest(BaseModel):
+    challenge_id: str = Field(min_length=16, max_length=128)
+    code: str = Field(min_length=6, max_length=6)
+
+class TwoFactorVerifyRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+class LoginResponse(BaseModel):
+    status: str
+    access_token: str | None = None
+    refresh_token: str | None = None
+    challenge_id: str | None = None
+    requires_2fa: bool = False
+    token_type: str = "bearer"
+
 class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str
