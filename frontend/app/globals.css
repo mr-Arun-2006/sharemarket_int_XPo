@@ -65,3 +65,9 @@ input:focus { border-color: var(--primary); }
   .analysis-form { display: grid; align-items: stretch; }
   .toplinks { display: none; }
 }
+
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+button:disabled, .button:disabled { opacity: .55; cursor: not-allowed; }
+button, a, input, select { transition: border-color .15s ease, opacity .15s ease, background .15s ease; }
+@media (max-width: 640px) { .panel { padding: 17px; border-radius: 14px; } .metric { font-size: 28px; } table { min-width: 620px; } .page-heading { margin-top: 20px; } h1 { font-size: clamp(34px, 12vw, 52px); } }
