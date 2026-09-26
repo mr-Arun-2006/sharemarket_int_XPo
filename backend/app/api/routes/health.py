@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.db.mongo import get_mongo_client
+from app.services.redis_live import redis_live_broker
 
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
@@ -37,6 +38,16 @@ async def ready():
         )
 
     if settings.redis_url:
-        checks["redis"] = "ok"
+        try:
+            if not redis_live_broker.client:
+                raise RuntimeError("Redis client is not initialized")
+            await redis_live_broker.client.ping()
+            checks["redis"] = "ok"
+        except Exception:
+            checks["redis"] = "error"
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "checks": checks},
+            )
 
     return {"status": "ready", "checks": checks}
