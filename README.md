@@ -52,3 +52,33 @@ Secrets belong only in environment variables. No API key, database password or s
 ## License
 
 MIT
+
+
+## Automated market-data pipeline
+
+The backend includes a configurable IST scheduler. By default it runs on weekdays at **15:45 Asia/Kolkata**, after NSE's normal equity session close of 15:30. The scheduler is designed to ingest EOD equity data plus dedicated index data, store an SHA-256 source fingerprint, prevent duplicate ingestion, and record failures in `ingestion_runs`.
+
+Configure these environment variables in `backend/.env`:
+
+```env
+DATA_SCHEDULER_ENABLED=true
+INGESTION_TIMEOUT_SECONDS=45
+NSE_EOD_URL_TEMPLATE=
+BSE_EOD_URL_TEMPLATE=
+NSE_INDEX_URL_TEMPLATE=
+BSE_INDEX_URL_TEMPLATE=
+```
+
+URL templates may use `{date}`, `{ddmmyyyy}`, `{ddmmyy}`, or `{yyyymmdd}`. The source URL must be an official exchange/distribution endpoint available to the deployment.
+
+NSE's current reports page lists **CM-UDiFF Common Bhavcopy Final (zip)** as the current capital-market bhavcopy and states that the older CM Bhavcopy/Common Bhavcopy CSV reports were discontinued from July 8, 2024. The repository therefore does not hard-code the discontinued CSV URL. citeturn116990search0turn623765view1
+
+BSE states that its daily EOD bhav-copy and historical market-data products are available through its information-products offering; the production deployment should use the access method permitted for the account rather than assuming an unrestricted public endpoint. citeturn222845search3
+
+The application market-status service uses the documented normal NSE equity session of **09:15-15:30 IST**. It intentionally does not claim holiday accuracy until an exchange holiday calendar is connected. citeturn485311search0
+
+Admin controls:
+```text
+GET  /api/v1/admin/data-pipeline/status
+POST /api/v1/admin/data-pipeline/run
+```
