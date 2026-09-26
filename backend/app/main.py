@@ -24,9 +24,6 @@ app = FastAPI(title="ShareM Int Xpo API", version="1.0.0", lifespan=mongo_lifesp
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 
-@app.get("/api/v1/health")
-async def health():
-    return {"status": "ok", "service": "sharem-int-xpo-api"}
 
 app.include_router(auth_router)
 app.include_router(health_router)
@@ -44,3 +41,14 @@ app.include_router(portfolio_router)
 app.include_router(context_router)
 app.include_router(fundamentals_router)
 app.include_router(strategies_router)
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if settings.app_env.lower() == "production":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
