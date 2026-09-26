@@ -10,7 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.core.config import settings
 from app.services.remote_ingestion import ingest_remote_eod
 from app.services.index_data import ingest_remote_index
-from app.services.remote_context import ingest_remote_context
+from app.services.remote_context import ingest_remote_context, ingest_nse_institutional
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -59,8 +59,20 @@ async def run_scheduled_ingestion() -> dict:
             await _record_failure("index_data", exchange, today, template, str(exc))
             results.append({"exchange": exchange, "dataset": "index_data", "status": "failed", "error": str(exc)})
 
+    # FII/FPI + DII uses the official NSE JSON endpoint and is not date-template based.
+    institutional_day = today
+    for item in reversed(results):
+        if item.get("dataset") == "eod_market_data" and item.get("exchange") == "NSE" and item.get("trade_date"):
+            institutional_day = date.fromisoformat(item["trade_date"])
+            break
+    try:
+        results.append(await ingest_nse_institutional(institutional_day))
+    except Exception as exc:
+        logger.exception("NSE institutional ingestion failed")
+        await _record_failure("institutional_activity", "NSE", institutional_day, "https://www.nseindia.com/api/fiidiiTradeReact", str(exc))
+        results.append({"dataset": "institutional_activity", "status": "failed", "error": str(exc)})
+
     context_sources = [
-        ("institutional", settings.nse_institutional_url_template),
         ("event", settings.nse_events_url_template),
         ("sector", settings.sector_mapping_url_template),
     ]
@@ -69,10 +81,10 @@ async def run_scheduled_ingestion() -> dict:
             results.append({"dataset": kind, "status": "not_configured"})
             continue
         try:
-            results.append(await ingest_remote_context(kind, template, today))
+            results.append(await ingest_remote_context(kind, template, institutional_day))
         except Exception as exc:
             logger.exception("%s context ingestion failed", kind)
-            await _record_failure(kind, "NSE", today, template, str(exc))
+            await _record_failure(kind, "NSE", institutional_day, template, str(exc))
             results.append({"dataset": kind, "status": "failed", "error": str(exc)})
     return {"trade_date": today.isoformat(), "results": results}
 
