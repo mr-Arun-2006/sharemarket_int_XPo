@@ -4,6 +4,7 @@ from typing import AsyncIterator
 from pymongo import AsyncMongoClient
 
 from app.core.config import settings
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 _client: AsyncMongoClient | None = None
 
@@ -13,8 +14,10 @@ async def mongo_lifespan() -> AsyncIterator[AsyncMongoClient]:
     _client = AsyncMongoClient(settings.mongodb_uri)
     await _client.admin.command("ping")
     try:
+        start_scheduler()
         yield _client
     finally:
+        stop_scheduler()
         await _client.close()
         _client = None
 
