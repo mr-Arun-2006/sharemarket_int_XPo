@@ -38,6 +38,7 @@ def build_ai_diagnosis(
     records: list[EODRecord],
     language: str = "en",
     symbol: str | None = None,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     language = language if language in SUPPORTED_LANGUAGES else "en"
     evidence: list[dict[str, Any]] = [
@@ -75,6 +76,7 @@ def build_ai_diagnosis(
     if summary.top_losers:
         key_reasons.append(f"Top observed loser: {summary.top_losers[0].symbol} ({_fmt(summary.top_losers[0].change_pct)}%).")
 
+    context = context or {}
     sections: dict[str, Any] = {
         "market": {
             "status": "available",
@@ -83,22 +85,25 @@ def build_ai_diagnosis(
             "key_reasons": key_reasons,
         },
         "sectors": {
-            "status": "missing",
-            "diagnosis": None,
-            "summary": "Sector classification data was not present in the ingested EOD dataset; no sector conclusion is generated.",
-            "evidence": [],
+            "status": "available" if context.get("sectors") else "missing",
+            "diagnosis": "Sector breadth available" if context.get("sectors") else None,
+            "summary": ("Sector-level aggregates are derived from the current NSE EOD rows and stored sector mapping." if context.get("sectors") else "Sector classification data was not present; no sector conclusion is generated."),
+            "leaders": context.get("sectors", [])[:8],
+            "evidence": [{"id": "EV-SECTOR-COVERAGE", "type": "derived", "label": "Sector coverage", "value": context.get("sector_coverage", {}), "source": "sector_data mapping joined with NSE EOD dataset"}] if context.get("sectors") else [],
         },
         "institutional_activity": {
-            "status": "missing",
-            "diagnosis": None,
-            "summary": "FII/DII or equivalent institutional-flow data was not present in the current dataset; no institutional conclusion is generated.",
-            "evidence": [],
+            "status": "available" if context.get("institutional_activity") else "missing",
+            "diagnosis": "Institutional activity available" if context.get("institutional_activity") else None,
+            "summary": ("FII/FPI and DII activity is shown from the ingested institutional dataset. Values are treated as source data, not forecasts." if context.get("institutional_activity") else "Institutional-flow data was not present; no institutional conclusion is generated."),
+            "rows": context.get("institutional_activity", []),
+            "evidence": [{"id": "EV-INSTITUTIONAL", "type": "source_data", "label": "Institutional activity", "value": context.get("institutional_activity", []), "source": "institutional_activity dataset"}] if context.get("institutional_activity") else [],
         },
         "major_events": {
-            "status": "missing",
-            "diagnosis": None,
-            "summary": "Event/news evidence is not part of the current EOD ingestion payload; no event is inferred from price action alone.",
-            "evidence": [],
+            "status": "available" if context.get("major_events") else "missing",
+            "diagnosis": "Corporate/event evidence available" if context.get("major_events") else None,
+            "summary": ("Exchange/company event records are available for the selected trade date. Event text is displayed as source evidence." if context.get("major_events") else "Event/news evidence was not ingested; no event is inferred from price action alone."),
+            "items": context.get("major_events", [])[:25],
+            "evidence": [{"id": "EV-MARKET-EVENTS", "type": "source_data", "label": "Corporate/event records", "value": context.get("major_events", [])[:25], "source": "market_events dataset"}] if context.get("major_events") else [],
         },
     }
 
@@ -172,7 +177,7 @@ def build_ai_diagnosis(
         "sections": sections,
         "evidence": evidence,
         "uncertainty": [
-            "Missing sector, institutional-flow, event/news and dedicated index data are explicitly excluded from conclusions.",
+            "Any sector, institutional, event/news or dedicated-index field not present in the supplied dataset is explicitly excluded from conclusions.",
             "Derived indicators are based only on the sessions available in the ingested dataset.",
         ],
     }
