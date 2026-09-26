@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     report_font_path: str = ""
     data_scheduler_enabled: bool = True
     ingestion_timeout_seconds: int = 45
-    nse_eod_url_template: str = ""
+    nse_eod_url_template: str = "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip"
     bse_eod_url_template: str = ""
     nse_index_url_template: str = ""
     bse_index_url_template: str = ""
