@@ -22,6 +22,34 @@ def _value(row: dict[str, Any], *aliases: str):
     return None
 
 
+
+def _normalize_date(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    candidates = [raw, raw.split(" ")[0]]
+    formats = ("%Y-%m-%d", "%d-%b-%Y", "%d-%B-%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d")
+    for candidate in candidates:
+        for fmt in formats:
+            try:
+                return datetime.strptime(candidate, fmt).date().isoformat()
+            except ValueError:
+                continue
+    return raw
+
+
+def _normalize_datetime(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt).isoformat(sep=" ")
+        except ValueError:
+            continue
+    return raw
+
+
 def _float(value: Any):
     try:
         return float(str(value).replace(",", "").strip())
@@ -58,7 +86,7 @@ def parse_context_csv(data: bytes, kind: str) -> list[dict[str, Any]]:
                 if net is None and buy is not None and sell is not None:
                     net = buy - sell
                 rows.append({
-                    "trade_date": str(trade_date).strip(),
+                    "trade_date": _normalize_date(trade_date),
                     "category": str(category).strip(),
                     "buy_value": buy,
                     "sell_value": sell,
@@ -75,7 +103,7 @@ def parse_context_csv(data: bytes, kind: str) -> list[dict[str, Any]]:
                     "symbol": str(symbol).strip().upper() if symbol else None,
                     "subject": str(subject or "").strip(),
                     "details": str(details or "").strip(),
-                    "broadcast_at": str(broadcast or "").strip(),
+                    "broadcast_at": _normalize_datetime(broadcast),
                     "source": _value(raw, "source") or "exchange",
                     "source_url": _value(raw, "url", "sourceurl", "link"),
                 })
