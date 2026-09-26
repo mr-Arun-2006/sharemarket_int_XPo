@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -6,28 +8,43 @@ from app.db.mongo import get_database
 
 bearer = HTTPBearer(auto_error=False)
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
-    if credentials is None:
-        raise HTTPException(401, "Authentication required")
+
+async def get_user_from_access_token(token: str) -> dict:
     try:
-        claims = decode_access_token(credentials.credentials)
-    except (ValueError, KeyError, TypeError):
+        claims = decode_access_token(token)
+    except (ValueError, KeyError, TypeError, IndexError):
         raise HTTPException(401, "Invalid or expired access token")
 
+    user_id = claims.get("sub")
+    session_id = claims.get("sid")
+    if not user_id or not session_id:
+        raise HTTPException(401, "Invalid access token claims")
+
     db = get_database()
-    user = await db.user.find_one({"user_id": claims["sub"]})
+    user = await db.user.find_one({"user_id": user_id})
     if not user:
         raise HTTPException(401, "User session is invalid")
 
-    session = await db.sessions.find_one({
-        "session_id": claims["sid"],
-        "user_id": user["user_id"],
-        "revoked_at": None,
-        "expires_at": {"$gt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)},
-    })
+    session = await db.sessions.find_one(
+        {
+            "session_id": session_id,
+            "user_id": user["user_id"],
+            "revoked_at": None,
+            "expires_at": {"$gt": datetime.now(timezone.utc)},
+        }
+    )
     if not session:
         raise HTTPException(401, "Session has been revoked or expired")
     return user
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    if credentials is None:
+        raise HTTPException(401, "Authentication required")
+    return await get_user_from_access_token(credentials.credentials)
+
 
 def require_permission(permission: str):
     async def dependency(current_user: dict = Depends(get_current_user)):
@@ -39,4 +56,5 @@ def require_permission(permission: str):
         if "*" not in permissions and permission not in permissions:
             raise HTTPException(403, "Permission denied")
         return current_user
+
     return dependency
