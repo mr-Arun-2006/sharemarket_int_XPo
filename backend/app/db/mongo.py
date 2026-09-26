@@ -23,6 +23,7 @@ async def mongo_lifespan() -> AsyncIterator[AsyncMongoClient]:
     try:
         await redis_live_broker.start(live_hub.publish_local)
         await live_provider.start(process_live_tick)
+        await _ensure_indexes()
         start_scheduler()
         yield _client
     finally:
@@ -31,6 +32,17 @@ async def mongo_lifespan() -> AsyncIterator[AsyncMongoClient]:
         await redis_live_broker.stop()
         await _client.close()
         _client = None
+
+
+
+async def _ensure_indexes() -> None:
+    db = get_database()
+    await db.rate_limits.create_index("key", unique=True, name="rate_limit_key_unique")
+    await db.rate_limits.create_index("expires_at", expireAfterSeconds=0, name="rate_limit_expiry_ttl")
+    await db.fundamental_data.create_index(
+        [("symbol", 1), ("as_of", -1)],
+        name="fundamental_symbol_asof",
+    )
 
 
 def get_mongo_client() -> AsyncMongoClient:
