@@ -95,6 +95,8 @@ async def data_pipeline_status(current_user: dict = Depends(require_permission("
             "NSE_INSTITUTIONAL": True,
             "NSE_EVENTS": bool(settings.nse_events_url_template),
             "SECTOR_MAPPING": bool(settings.sector_mapping_url_template),
+            "LIVE_PROVIDER": bool(settings.live_provider_url),
+            "REDIS": bool(settings.redis_url),
         },
         "recent_runs": runs,
         "checked_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
