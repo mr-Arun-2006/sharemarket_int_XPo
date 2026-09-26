@@ -106,10 +106,10 @@ async def intelligence_history(
     analysis_type: str | None = Query(default=None, pattern="^(market|stock)$"),
     language: str | None = Query(default=None, pattern="^(en|ta|hi|gu|kn)$"),
     limit: int = Query(default=30, ge=1, le=100),
-    _: dict = Depends(require_permission("reports.read")),
+    current_user: dict = Depends(require_permission("reports.read")),
 ):
     db = get_database()
-    query = {}
+    query = {"user_id": current_user["user_id"]}
     if q:
         query["$or"] = [
             {"analysis_id": {"$regex": q, "$options": "i"}},
