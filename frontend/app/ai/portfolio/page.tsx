@@ -1,0 +1,2 @@
+import { AppShell } from "../../../components/AppShell"; import { SectionPage } from "../../../components/SectionPage";
+export default function AIPortfolioPage() { return <AppShell><SectionPage eyebrow="AI Intelligence / Portfolio" title="Portfolio intelligence" description="Interpret portfolio performance, exposure and risk using the user's private portfolio data." /><section className="panel"><div className="empty">Portfolio AI will use private portfolio context only after authentication.</div></section></AppShell>; }
