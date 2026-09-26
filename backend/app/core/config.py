@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = ""
     ai_timeout_seconds: int = 30
+    redis_url: str = ""
     report_font_path: str = ""
     data_scheduler_enabled: bool = True
     ingestion_timeout_seconds: int = 45
@@ -25,6 +26,9 @@ class Settings(BaseSettings):
     nse_institutional_url_template: str = ""
     nse_events_url_template: str = ""
     sector_mapping_url_template: str = ""
+    live_provider_url: str = ""
+    live_provider_api_key: str = ""
+    live_ingest_api_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
