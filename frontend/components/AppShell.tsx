@@ -2,75 +2,25 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 const primaryNav = [
-  ["Dashboard", "/dashboard"],
-  ["Markets", "/markets"],
-  ["NSE vs BSE", "/exchanges"],
-  ["Screener", "/screener"],
-  ["Stocks", "/stocks"],
-  ["Watchlist", "/watchlist"],
-  ["Portfolio", "/portfolio"],
-  ["Strategy & Backtesting", "/strategies"],
-  ["AI Intelligence", "/ai"],
-  ["Alerts", "/alerts"],
-  ["Reports", "/reports"],
-  ["Settings", "/settings"],
-  ["Admin", "/admin"],
+  ["Dashboard", "/dashboard"], ["Markets", "/markets"], ["NSE vs BSE", "/exchanges"],
+  ["Screener", "/screener"], ["Stocks", "/stocks"], ["Watchlist", "/watchlist"],
+  ["Portfolio", "/portfolio"], ["Strategy & Backtesting", "/strategies"],
+  ["AI Intelligence", "/ai"], ["Alerts", "/alerts"], ["Reports", "/reports"],
+  ["Settings", "/settings"], ["Admin", "/admin"],
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [role, setRole] = useState("");
   const pathname = usePathname();
 
-  return (
-    <div className="product-shell">
-      <aside className={open ? "sidebar open" : "sidebar"}>
-        <div className="sidebar-brand">
-          <span className="brand-mark">SM</span>
-          <div>
-            <div className="brand">ShareM Int Xpo</div>
-            <div className="caption">Market Intelligence</div>
-          </div>
-        </div>
-        <nav className="sidebar-nav" aria-label="Primary navigation">
-          {primaryNav.map(([label, href]) => {
-            const active = pathname === href || pathname.startsWith(href + "/");
-            return (
-              <Link
-                key={href}
-                className={active ? "active" : ""}
-                href={href}
-                onClick={() => setOpen(false)}
-              >
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-      </aside>
+  useEffect(() => {
+    apiFetch<{role:string}>("/api/v1/auth/me").then((user)=>setRole(user.role)).catch(()=>setRole(""));
+  }, []);
 
-      {open && <button className="sidebar-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />}
-
-      <div className="product-main">
-        <header className="product-topbar">
-          <button className="menu-button" onClick={() => setOpen(true)} aria-label="Open menu">☰</button>
-          <div className="global-search" role="search">AI Global Search</div>
-          <button className="market-status" type="button"><span className="status-dot" /> Market Status</button>
-          <Link className="top-action" href="/exchanges">NSE vs BSE</Link>
-          <select className="language-select" defaultValue="文 English" aria-label="AI response language">
-            <option>文 English</option>
-            <option>文 தமிழ்</option>
-            <option>文 हिंदी</option>
-            <option>文 ગુજરાતી</option>
-            <option>文 ಕನ್ನಡ</option>
-          </select>
-          <Link className="top-action" href="/alerts">Notifications</Link>
-          <Link className="top-action" href="/settings">Profile</Link>
-        </header>
-        <div className="product-content">{children}</div>
-      </div>
-    </div>
-  );
+  return <div className="product-shell"><aside className={open?"sidebar open":"sidebar"}><div className="sidebar-brand"><span className="brand-mark">SM</span><div><div className="brand">ShareM Int Xpo</div><div className="caption">Market Intelligence</div></div></div><nav className="sidebar-nav" aria-label="Primary navigation">{primaryNav.filter(([label])=>label!=="Admin"||role==="admin").map(([label,href])=>{const active=pathname===href||pathname.startsWith(href+"/");return <Link key={href} className={active?"active":""} href={href} onClick={()=>setOpen(false)}>{label}</Link>;})}</nav></aside>{open&&<button className="sidebar-backdrop" aria-label="Close menu" onClick={()=>setOpen(false)}/>}<div className="product-main"><header className="product-topbar"><button className="menu-button" onClick={()=>setOpen(true)} aria-label="Open menu">☰</button><div className="global-search" role="search">AI Global Search</div><button className="market-status" type="button"><span className="status-dot"/> Market Status</button><Link className="top-action" href="/exchanges">NSE vs BSE</Link><select className="language-select" defaultValue="文 English" aria-label="AI response language"><option>文 English</option><option>文 தமிழ்</option><option>文 हिंदी</option><option>文 ગુજરાતી</option><option>文 ಕನ್ನಡ</option></select><Link className="top-action" href="/alerts">Notifications</Link><Link className="top-action" href="/settings">Profile</Link></header><div className="product-content">{children}</div></div></div>;
 }
