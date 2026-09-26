@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { apiFetch } from "../../lib/api";
 
-type Exchange={exchange:"NSE"|"BSE";data_status:string;trade_date:string|null;records:number;positive:number;negative:number;unchanged:number;breadth_pct:number|null;average_change_pct:number|null;total_volume:number|null;total_turnover:number|null;source?:string|null;fetched_at?:string|null};
+type Mover={symbol:string;change_pct:number|null;close:number|null};
+type Exchange={exchange:"NSE"|"BSE";data_status:string;trade_date:string|null;records:number;positive:number;negative:number;unchanged:number;breadth_pct:number|null;average_change_pct:number|null;total_volume:number|null;total_turnover:number|null;top_gainers:Mover[];top_losers:Mover[];source?:string|null;fetched_at?:string|null};
 type Pair={symbol:string;nse_change_pct:number;bse_change_pct:number;spread_pct:number};
 type Comparison={generated_at:string;exchanges:{NSE:Exchange;BSE:Exchange};index_performance:unknown[];index_note:string;stock_level_comparison:{matched_symbols:number;largest_change_spreads:Pair[]}};
 
