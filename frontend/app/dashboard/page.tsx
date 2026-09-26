@@ -24,8 +24,6 @@ type Tick = {
   as_of?: string;
 };
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_BASE_URL || "ws://localhost:8000";
-
 export default function DashboardPage() {
   const [connection, setConnection] = useState("connecting");
   const [ticks, setTicks] = useState<Record<string, Tick>>({});
