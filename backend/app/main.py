@@ -16,6 +16,7 @@ from app.api.routes.alerts import router as alerts_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.portfolio import router as portfolio_router
 from app.api.routes.context import router as context_router
+from app.api.routes.fundamentals import router as fundamentals_router
 from app.api.routes.strategies import router as strategies_router
 
 app = FastAPI(title="ShareM Int Xpo API", version="1.0.0", lifespan=mongo_lifespan)
@@ -39,4 +40,5 @@ app.include_router(alerts_router)
 app.include_router(reports_router)
 app.include_router(portfolio_router)
 app.include_router(context_router)
+app.include_router(fundamentals_router)
 app.include_router(strategies_router)
