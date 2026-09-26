@@ -189,6 +189,61 @@ def build_report_pdf(report: dict) -> bytes:
             "News and event evidence is not included in the current EOD ingestion dataset.",
         ], styles_map))
 
+    context = report.get("context_snapshot") or {}
+    sectors = context.get("sectors") or []
+    if sectors:
+        story.append(_para("Sector Performance", styles_map["h2"]))
+        sector_rows = [["Sector", "Stocks", "Avg Change %"]]
+        for item in sectors[:12]:
+            sector_rows.append([
+                _clean(item.get("sector")),
+                _clean(item.get("stocks_covered")),
+                _clean(item.get("average_change_pct")),
+            ])
+        sector_table = Table(sector_rows, colWidths=[85*mm, 35*mm, 52*mm], repeatRows=1)
+        sector_table.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#172033")),
+            ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+            ("FONTNAME",(0,0),(-1,-1),font),
+            ("FONTSIZE",(0,0),(-1,-1),7.5),
+            ("GRID",(0,0),(-1,-1),0.3,colors.HexColor("#d8dee9")),
+            ("TOPPADDING",(0,0),(-1,-1),5),
+            ("BOTTOMPADDING",(0,0),(-1,-1),5),
+        ]))
+        story.append(sector_table)
+
+    institutional = context.get("institutional_activity") or []
+    if institutional:
+        story.append(_para("Institutional Activity", styles_map["h2"]))
+        inst_rows = [["Category", "Buy", "Sell", "Net"]]
+        for item in institutional[:10]:
+            inst_rows.append([
+                _clean(item.get("category")),
+                _clean(item.get("buy_value")),
+                _clean(item.get("sell_value")),
+                _clean(item.get("net_value")),
+            ])
+        inst_table = Table(inst_rows, colWidths=[55*mm, 38*mm, 38*mm, 41*mm], repeatRows=1)
+        inst_table.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#172033")),
+            ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+            ("FONTNAME",(0,0),(-1,-1),font),
+            ("FONTSIZE",(0,0),(-1,-1),7.5),
+            ("GRID",(0,0),(-1,-1),0.3,colors.HexColor("#d8dee9")),
+            ("TOPPADDING",(0,0),(-1,-1),5),
+            ("BOTTOMPADDING",(0,0),(-1,-1),5),
+        ]))
+        story.append(inst_table)
+
+    events = context.get("major_events") or []
+    story.append(_para("Major Events & Source Records", styles_map["h2"]))
+    story.append(_list_table([
+        f"{_clean(item.get('broadcast_at'))} | {_clean(item.get('symbol'))} | {_clean(item.get('subject'))}"
+        for item in events[:12]
+    ] if events else [
+        "No event records were ingested for the selected trade date."
+    ], styles_map))
+
     story.append(_para("Top Gainers", styles_map["h2"]))
     gain_rows = [["Symbol", "Change %", "Close", "Volume"]]
     for item in (report.get("top_gainers") or [])[:10]:
