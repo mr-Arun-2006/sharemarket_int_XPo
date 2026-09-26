@@ -10,6 +10,7 @@ from app.db.mongo import get_database
 from app.services.ai_provider import generate_narrative
 from app.services.eod_engine import build_market_summary
 from app.services.intelligence import SUPPORTED_LANGUAGES, build_ai_diagnosis
+from app.services.context_data import build_market_context
 from app.schemas.market import EODRecord
 
 router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
@@ -49,7 +50,8 @@ async def generate_eod_intelligence(
 
     try:
         summary = build_market_summary(records)
-        diagnosis = build_ai_diagnosis(summary, records, language=language, symbol=symbol)
+        context = await build_market_context(summary.trade_date)
+        diagnosis = build_ai_diagnosis(summary, records, language=language, symbol=symbol, context=context)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -81,6 +83,7 @@ async def generate_eod_intelligence(
         "top_gainers": [item.__dict__ for item in summary.top_gainers],
         "top_losers": [item.__dict__ for item in summary.top_losers],
         "hierarchy": diagnosis["sections"],
+        "context_snapshot": context,
         "evidence": diagnosis["evidence"],
         "uncertainty": diagnosis["uncertainty"],
         "ai_provider": provider["status"],
@@ -158,8 +161,9 @@ async def compare_historical_analysis(analysis_id: str, current_user: dict = Dep
 
     try:
         summary = build_market_summary(records)
+        context = await build_market_context(summary.trade_date)
         latest = build_ai_diagnosis(
-            summary, records, language=original.get("language", "en"), symbol=symbol
+            summary, records, language=original.get("language", "en"), symbol=symbol, context=context
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
