@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import WebSocket
+
+from app.core.config import settings
 
 
 @dataclass(frozen=True)
@@ -26,8 +29,10 @@ class LiveHub:
         self.broker = None
 
     async def connect(self, websocket: WebSocket) -> None:
-        await websocket.accept()
         async with self._lock:
+            if len(self._clients) >= settings.live_max_connections:
+                raise RuntimeError("Live market connection limit reached")
+            await websocket.accept(subprotocol="sharem-auth")
             self._clients.add(websocket)
 
     async def disconnect(self, websocket: WebSocket) -> None:
@@ -60,6 +65,13 @@ class LiveHub:
     @property
     def client_count(self) -> int:
         return len(self._clients)
+
+    @staticmethod
+    def heartbeat_payload() -> dict[str, Any]:
+        return {
+            "type": "market.heartbeat",
+            "data": {"as_of": datetime.now(timezone.utc).isoformat()},
+        }
 
 
 live_hub = LiveHub()
