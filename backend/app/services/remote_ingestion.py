@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from urllib.parse import urlparse
 import hashlib
-import re
 
 import httpx
 
+from app.core.config import settings
 from app.db.mongo import get_database
 from app.services.market_data import build_ingestion_document, parse_exchange_eod
 
@@ -21,7 +21,7 @@ def expand_url(template: str, day: date) -> str:
     return template.format(**values)
 
 
-async def fetch_source(url: str, timeout: float = 45.0) -> tuple[bytes, dict]:
+async def fetch_source(url: str, timeout: float | None = None) -> tuple[bytes, dict]:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         raise ValueError("EOD source URL must use http or https")
@@ -30,16 +30,26 @@ async def fetch_source(url: str, timeout: float = 45.0) -> tuple[bytes, dict]:
         "User-Agent": "ShareM-Int-Xpo/1.0 (+market-data-ingestion)",
         "Accept": "application/zip, text/csv, application/octet-stream, */*",
     }
-    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, headers=headers) as client:
+    effective_timeout = timeout or settings.ingestion_timeout_seconds
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=effective_timeout,
+        headers=headers,
+    ) as client:
         response = await client.get(url)
         response.raise_for_status()
+        payload = response.content
+        if len(payload) > settings.ingestion_max_bytes:
+            raise ValueError(
+                f"EOD source exceeded INGESTION_MAX_BYTES ({settings.ingestion_max_bytes} bytes)"
+            )
         content_type = response.headers.get("content-type", "")
-        return response.content, {
+        return payload, {
             "url": str(response.url),
             "content_type": content_type,
             "http_status": response.status_code,
-            "sha256": hashlib.sha256(response.content).hexdigest(),
-            "bytes": len(response.content),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "bytes": len(payload),
         }
 
 
@@ -72,7 +82,7 @@ async def fetch_nse_report(report_name: str, day: date) -> tuple[bytes, dict]:
     }
     async with httpx.AsyncClient(
         follow_redirects=True,
-        timeout=45.0,
+        timeout=settings.ingestion_timeout_seconds,
         headers=headers,
     ) as client:
         landing = await client.get("https://www.nseindia.com/all-reports")
@@ -80,6 +90,10 @@ async def fetch_nse_report(report_name: str, day: date) -> tuple[bytes, dict]:
         response = await client.get(api_url)
         response.raise_for_status()
         content = response.content
+        if len(content) > settings.ingestion_max_bytes:
+            raise ValueError(
+                f"NSE report exceeded INGESTION_MAX_BYTES ({settings.ingestion_max_bytes} bytes)"
+            )
         content_type = response.headers.get("content-type", "")
         if not content:
             raise ValueError("NSE report response was empty")
