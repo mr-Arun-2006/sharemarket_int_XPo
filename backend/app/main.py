@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.core.config import settings
 from app.db.mongo import mongo_lifespan
 from app.api.routes.auth import router as auth_router
@@ -20,6 +21,7 @@ from app.api.routes.fundamentals import router as fundamentals_router
 from app.api.routes.strategies import router as strategies_router
 
 app = FastAPI(title="ShareM Int Xpo API", version="1.0.0", lifespan=mongo_lifespan)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 
 @app.get("/api/v1/health")
