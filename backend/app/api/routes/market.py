@@ -77,3 +77,52 @@ async def eod_history(symbol: str = Query(min_length=1,max_length=32), exchange:
     for row in docs:
         row["change_pct"]=_pct(row.get("close"),row.get("previous_close")); row["data_status"]="eod"
     return {"exchange":exchange,"symbol":symbol.upper(),"sessions":docs,"count":len(docs)}
+
+
+@router.get("/status")
+async def market_status():
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    open_time = time(9, 15)
+    close_time = time(15, 30)
+    weekday = now.weekday() < 5
+    in_session = weekday and open_time <= now.time() < close_time
+    return {
+        "timestamp": now.isoformat(),
+        "timezone": "Asia/Kolkata",
+        "nse": {"status": "open" if in_session else "closed", "normal_session": "09:15-15:30"},
+        "bse": {"status": "open" if in_session else "closed", "normal_session": "09:15-15:30"},
+        "calendar_basis": "weekday schedule only; exchange holiday calendar is not loaded",
+        "data_layers": {
+            "live": "websocket",
+            "eod": "scheduled after market close",
+        },
+    }
+
+
+@router.get("/index/overview")
+async def index_overview(_: dict = Depends(require_permission("market.read"))):
+    db = get_database()
+    rows = []
+    for exchange in ("NSE", "BSE"):
+        latest = await db.index_data.find_one(
+            {"exchange": exchange},
+            {"_id": 0},
+            sort=[("trade_date", -1)],
+        )
+        rows.append({
+            "exchange": exchange,
+            "data_status": "eod" if latest else "missing",
+            "symbol": latest.get("symbol") if latest else None,
+            "trade_date": latest.get("trade_date") if latest else None,
+            "close": latest.get("close") if latest else None,
+            "previous_close": latest.get("previous_close") if latest else None,
+            "change_pct": (
+                _pct(latest.get("close"), latest.get("previous_close"))
+                if latest else None
+            ),
+            "source_url": latest.get("source_url") if latest else None,
+        })
+    return {"indices": rows}
