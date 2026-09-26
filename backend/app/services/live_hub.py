@@ -49,9 +49,10 @@ class LiveHub:
             await self.disconnect(client)
 
     async def publish(self, payload: dict[str, Any]) -> None:
-        await self.publish_local(payload)
-        if self.broker:
+        if self.broker and self.broker.client:
             await self.broker.publish(payload)
+            return
+        await self.publish_local(payload)
 
     def attach_broker(self, broker: Any) -> None:
         self.broker = broker
