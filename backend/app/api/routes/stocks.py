@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException, Query
 from app.db.mongo import get_database
 from app.schemas.market import EODRecord
@@ -19,7 +21,7 @@ async def list_stocks(exchange: str = Query(default="NSE", pattern="^(?i:NSE|BSE
     if not latest: return {"exchange": exchange, "trade_date": None, "stocks": []}
     query = {"exchange": exchange, "trade_date": latest["trade_date"]}
     if q.strip():
-        term = q.strip()
+        term = re.escape(q.strip())
         query["$or"] = [{"symbol": {"$regex": term, "$options": "i"}}, {"name": {"$regex": term, "$options": "i"}}]
     docs = await db.eod_market_data.find(query, {"_id": 0, "symbol": 1, "name": 1, "close": 1, "previous_close": 1, "volume": 1}).sort("symbol", 1).to_list(length=limit)
     return {"exchange": exchange, "trade_date": latest["trade_date"], "stocks": [{**row, "change_pct": _pct(row.get("close"), row.get("previous_close")), "data_status": "eod"} for row in docs]}
