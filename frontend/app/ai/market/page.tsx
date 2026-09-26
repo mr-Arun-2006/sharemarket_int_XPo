@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "../../../components/AppShell";
 import { apiDownload, apiFetch } from "../../../lib/api";
@@ -18,7 +18,7 @@ type Analysis={
 
 const languages=[["en","English"],["ta","Tamil"],["hi","Hindi"],["gu","Gujarati"],["kn","Kannada"]];
 
-export default function MarketAIPage(){
+function MarketAIContent(){
   const searchParams=useSearchParams();
   const historicalId=searchParams.get("analysis");
   const [symbol,setSymbol]=useState(""); const [language,setLanguage]=useState("en");
@@ -88,4 +88,8 @@ export default function MarketAIPage(){
       <article className="panel full"><div className="eyebrow">Uncertainty</div><div className="evidence-list">{analysis.uncertainty.map((x,i)=><div key={i}>{x}</div>)}</div><div className="disclaimer">{analysis.disclaimer}</div></article>
     </section>}
   </AppShell>;
+}
+
+export default function MarketAIPage(){
+  return <Suspense fallback={<AppShell><section className="panel"><div className="muted">Loading AI workspace...</div></section></AppShell>}><MarketAIContent /></Suspense>;
 }
