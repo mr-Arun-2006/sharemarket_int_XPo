@@ -17,7 +17,7 @@ def test_liveness_endpoint_is_dependency_free():
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport,
-            base_url="http://testserver",
+            base_url="http://localhost",
         ) as client:
             return await client.get("/api/v1/health/live")
 
