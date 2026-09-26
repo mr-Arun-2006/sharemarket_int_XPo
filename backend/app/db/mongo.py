@@ -14,11 +14,16 @@ async def mongo_lifespan() -> AsyncIterator[AsyncMongoClient]:
     _client = AsyncMongoClient(settings.mongodb_uri)
     await _client.admin.command("ping")
     from app.services.scheduler import start_scheduler, stop_scheduler
+    from app.services.live_hub import live_hub
+    from app.services.redis_live import redis_live_broker
+    live_hub.attach_broker(redis_live_broker)
     try:
+        await redis_live_broker.start(live_hub.publish_local)
         start_scheduler()
         yield _client
     finally:
         stop_scheduler()
+        await redis_live_broker.stop()
         await _client.close()
         _client = None
 
