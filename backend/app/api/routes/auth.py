@@ -12,6 +12,7 @@ from app.schemas.auth import (
     TwoFactorCodeRequest, TwoFactorVerifyRequest, VerifyRequest,
 )
 from app.api.deps.auth import get_current_user
+from app.api.deps.rate_limit import rate_limit
 from app.services.audit import record_audit
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -36,7 +37,7 @@ async def _issue_session(db, user: dict):
     access = create_access_token(user["user_id"], user["role"], session_id)
     return AuthResponse(access_token=access, refresh_token=refresh)
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED, dependencies=[rate_limit("auth.register", 5, 900)])
 async def register(payload: RegisterRequest):
     db = get_database()
     email = payload.email.lower()
@@ -73,7 +74,7 @@ async def register(payload: RegisterRequest):
         response["development_otp"] = otp
     return response
 
-@router.post("/verify")
+@router.post("/verify", dependencies=[rate_limit("auth.verify", 10, 600)])
 async def verify(payload: VerifyRequest):
     db = get_database()
     email = payload.email.lower()
@@ -92,7 +93,7 @@ async def verify(payload: VerifyRequest):
     await record_audit("auth.verify_email", user_id=challenge["user_id"], target_type="user", target_id=challenge["user_id"])
     return {"status": "verified"}
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=LoginResponse, dependencies=[rate_limit("auth.login", 10, 60)])
 async def login(payload: LoginRequest):
     db = get_database()
     email = payload.email.lower()
@@ -118,7 +119,7 @@ async def login(payload: LoginRequest):
     await record_audit("auth.login", user_id=user["user_id"], target_type="session")
     return LoginResponse(status="authenticated", access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
-@router.post("/2fa/verify-login", response_model=AuthResponse)
+@router.post("/2fa/verify-login", response_model=AuthResponse, dependencies=[rate_limit("auth.2fa", 10, 300)])
 async def verify_login_2fa(payload: TwoFactorCodeRequest):
     db = get_database()
     challenge = await db.auth_challenges.find_one({
@@ -184,7 +185,7 @@ async def disable_2fa(payload: TwoFactorVerifyRequest, current_user: dict = Depe
     await record_audit("auth.2fa_disabled", user_id=current_user["user_id"], target_type="user", target_id=current_user["user_id"])
     return {"status": "disabled"}
 
-@router.post("/refresh", response_model=AuthResponse)
+@router.post("/refresh", response_model=AuthResponse, dependencies=[rate_limit("auth.refresh", 30, 60)])
 async def refresh(payload: RefreshRequest):
     db = get_database()
     session = await db.sessions.find_one({
