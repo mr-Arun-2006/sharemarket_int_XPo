@@ -125,6 +125,7 @@ async def download_report_pdf(
         "ai_narrative": analysis.get("ai_narrative"),
         "evidence": analysis.get("evidence", []),
         "uncertainty": analysis.get("uncertainty", []),
+        "context_snapshot": analysis.get("context_snapshot", {}),
         "disclaimer": analysis.get("disclaimer"),
         "data_status": analysis.get("status", "complete"),
     }
