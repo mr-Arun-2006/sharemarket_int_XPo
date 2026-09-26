@@ -1,4 +1,4 @@
-name: Backend syntax check
+name: Backend CI
 
 on:
   push:
@@ -10,14 +10,27 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   compile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+
       - name: Compile backend
         run: python -m compileall -q backend/app
+
+      - name: Validate workflow inputs
+        run: |
+          test -f backend/requirements.txt
+          test -f backend/app/main.py
