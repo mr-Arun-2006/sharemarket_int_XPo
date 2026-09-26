@@ -52,7 +52,7 @@ export default function AdminPage(){
     <section className="page-heading"><div><div className="eyebrow">Admin</div><h1>Platform administration</h1><p className="lead">Users, roles, security audit and exchange data ingestion.</p></div></section>
     {error&&<div className="error">{error}</div>}{message&&<div className="panel" style={{marginBottom:18}}>{message}</div>}
 
-    <section className="panel"><div className="eyebrow">Data Pipeline</div><h2>Ingest official EOD file</h2><p className="muted">Upload a normalized NSE or BSE EOD CSV/ZIP. Existing rows for the same exchange and trade date are replaced atomically at the dataset level.</p>
+    <section className="panel"><div className="eyebrow">Data Pipeline</div><h2>Ingest official EOD file</h2><p className="muted">Upload a normalized NSE or BSE EOD CSV/ZIP. Existing rows for the same exchange and trade date are replaced before the new normalized dataset is stored.</p>
       <form onSubmit={ingest}><div className="actions"><select value={exchange} onChange={e=>setExchange(e.target.value as "NSE"|"BSE")}><option>NSE</option><option>BSE</option></select><input type="file" accept=".csv,.zip,.txt" onChange={e=>setFile(e.target.files?.[0]??null)}/><button className="button primary">Ingest EOD</button></div></form>
       <div className="table-wrap" style={{marginTop:14}}><table><thead><tr><th>Exchange</th><th>Status</th><th>Trade Date</th><th>Records</th><th>Fetched</th></tr></thead><tbody>{statuses.map(s=><tr key={s.exchange}><td>{s.exchange}</td><td>{s.status}</td><td>{s.trade_date??"--"}</td><td>{s.records_seen??"--"}</td><td>{s.fetched_at?new Date(s.fetched_at).toLocaleString():"--"}</td></tr>)}</tbody></table></div>
     </section>
