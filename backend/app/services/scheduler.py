@@ -8,7 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
-from app.services.remote_ingestion import ingest_remote_eod
+from app.services.remote_ingestion import ingest_remote_eod, ingest_nse_eod_from_portal
 from app.services.index_data import ingest_remote_index
 from app.services.remote_context import ingest_remote_context, ingest_nse_institutional
 
@@ -33,32 +33,30 @@ async def _record_failure(dataset: str, exchange: str, trade_date, source: str, 
 async def run_scheduled_ingestion() -> dict:
     results = []
     today = datetime.now(IST).date()
-    sources = [
-        ("NSE", settings.nse_eod_url_template),
-        ("BSE", settings.bse_eod_url_template),
-    ]
-    for exchange, template in sources:
-        if not template:
-            results.append({"exchange": exchange, "status": "not_configured"})
-            continue
-        try:
-            results.append(await ingest_remote_eod(exchange, template, today))
-        except Exception as exc:
-            logger.exception("%s EOD ingestion failed", exchange)
-            await _record_failure("eod_market_data", exchange, today, template, str(exc))
-            results.append({"exchange": exchange, "status": "failed", "error": str(exc)})
+    # NSE is downloaded through its official All Reports portal.
+    try:
+        results.append(await ingest_nse_eod_from_portal(today))
+    except Exception as exc:
+        logger.exception("NSE EOD portal ingestion failed")
+        await _record_failure(
+            "eod_market_data",
+            "NSE",
+            today,
+            "https://www.nseindia.com/all-reports",
+            str(exc),
+        )
+        results.append({"exchange": "NSE", "status": "failed", "error": str(exc)})
 
-    for exchange, template in [("NSE", settings.nse_index_url_template), ("BSE", settings.bse_index_url_template)]:
-        if not template:
-            results.append({"exchange": exchange, "dataset": "index_data", "status": "not_configured"})
-            continue
+    # BSE remains configuration-driven because its official EOD distribution access is account-dependent.
+    if not settings.bse_eod_url_template:
+        results.append({"exchange": "BSE", "status": "not_configured"})
+    else:
         try:
-            results.append(await ingest_remote_index(template, exchange, today))
+            results.append(await ingest_remote_eod("BSE", settings.bse_eod_url_template, today))
         except Exception as exc:
-            logger.exception("%s index ingestion failed", exchange)
-            await _record_failure("index_data", exchange, today, template, str(exc))
-            results.append({"exchange": exchange, "dataset": "index_data", "status": "failed", "error": str(exc)})
-
+            logger.exception("BSE EOD ingestion failed")
+            await _record_failure("eod_market_data", "BSE", today, settings.bse_eod_url_template, str(exc))
+            results.append({"exchange": "BSE", "status": "failed", "error": str(exc)})
     # FII/FPI + DII uses the official NSE JSON endpoint and is not date-template based.
     institutional_day = today
     for item in reversed(results):
