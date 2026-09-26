@@ -84,14 +84,32 @@ POST /api/v1/admin/data-pipeline/run
 ```
 
 
-## Current official NSE data connection
 
-The default NSE EOD source is configured for the current UDiFF cash-market bhavcopy pattern:
+## Official NSE report download
 
-https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip
+The production NSE cash-market EOD path uses the same current report exposed by the official NSE All Reports portal: **CM-UDiFF Common Bhavcopy Final (zip)**. The backend opens the official All Reports page, creates the required NSE web session, calls the report service for the selected date, downloads the ZIP response, validates the embedded trade date, fingerprints the payload with SHA-256, and stores the normalized rows in MongoDB. NSE's current All Reports page lists this report and marks the older CM CSV bhavcopy reports discontinued from July 8, 2024.
 
-NSE's current reports page lists CM-UDiFF Common Bhavcopy Final (zip) and states that the older CM Bhavcopy CSV reports were discontinued from July 8, 2024. Reference: NSE All Reports.
+The UDiFF file specification and sample/test files are published by NSE in its Forms & Formats section.
 
-The scheduler also uses NSE's official FII/FPI & DII JSON endpoint at https://www.nseindia.com/api/fiidiiTradeReact with a primed NSE session, storing only the requested trading date. The current NSE FII/DII report exposes Buy Value, Sell Value and Net Value for FII/FPI and DII.
+The NSE institutional pipeline uses the official FII/FPI & DII report service and stores Buy Value, Sell Value and Net Value for the exact trading date associated with the downloaded EOD session.
 
-BSE EOD data remains configuration-driven because BSE's official information-products tariff lists EOD Bhavcopy as a paid product; the repository does not bypass that access model.
+BSE EOD remains configuration-driven because its permitted distribution/access model differs from the public NSE report flow.
+
+Environment variables:
+
+    DATA_SCHEDULER_ENABLED=true
+    INGESTION_TIMEOUT_SECONDS=45
+    NSE_EOD_URL_TEMPLATE=
+    BSE_EOD_URL_TEMPLATE=
+    NSE_INDEX_URL_TEMPLATE=
+    BSE_INDEX_URL_TEMPLATE=
+    NSE_INSTITUTIONAL_URL_TEMPLATE=
+    NSE_EVENTS_URL_TEMPLATE=
+    SECTOR_MAPPING_URL_TEMPLATE=
+
+NSE_EOD_URL_TEMPLATE is intentionally empty: NSE uses the built-in official All Reports downloader. It may still be used as an explicit override for testing or a controlled deployment.
+
+Admin controls:
+
+    GET  /api/v1/admin/data-pipeline/status
+    POST /api/v1/admin/data-pipeline/run
