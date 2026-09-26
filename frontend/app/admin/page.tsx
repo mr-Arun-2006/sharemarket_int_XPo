@@ -12,7 +12,7 @@ type Pipeline={scheduler_enabled:boolean;scheduler_running:boolean;sources:Recor
 export default function AdminPage(){
   const [users,setUsers]=useState<User[]>([]); const [roles,setRoles]=useState<Role[]>([]); const [statuses,setStatuses]=useState<Status[]>([]); const [pipeline,setPipeline]=useState<Pipeline|null>(null);
   const [roleDraft,setRoleDraft]=useState<Record<string,string>>({}); const [exchange,setExchange]=useState<"NSE"|"BSE">("NSE"); const [file,setFile]=useState<File|null>(null);
-  const [message,setMessage]=useState(""); const [error,setError]=useState(""); const [running,setRunning]=useState(false);
+  const [message,setMessage]=useState(""); const [error,setError]=useState(""); const [running,setRunning]=useState(false);\n  const [contextKind,setContextKind]=useState<"sector"|"institutional"|"event">("sector"); const [contextFile,setContextFile]=useState<File|null>(null);
 
   async function load(){
     try{
@@ -41,6 +41,14 @@ export default function AdminPage(){
     catch(err){setError(err instanceof Error?err.message:"EOD ingestion failed");}
   }
 
+  async function ingestContext(event:FormEvent){
+    event.preventDefault();setError("");setMessage("");
+    if(!contextFile){setError("Choose a context CSV file.");return;}
+    const body=new FormData();body.append("file",contextFile);
+    try{const result=await apiFetch<{dataset:string;records_seen:number}>("/api/v1/market/context/ingest/"+contextKind,{method:"POST",body});setMessage(contextKind+" context ingested ("+result.records_seen+" rows).");setContextFile(null);}
+    catch(err){setError(err instanceof Error?err.message:"Context ingestion failed");}
+  }
+
   async function runPipeline(){
     setRunning(true);setError("");setMessage("");
     try{const result=await apiFetch<{trade_date:string}>("/api/v1/admin/data-pipeline/run",{method:"POST"});setMessage("Pipeline run completed for "+result.trade_date+".");await load();}
@@ -59,6 +67,8 @@ export default function AdminPage(){
       <form onSubmit={ingest}><div className="actions"><select value={exchange} onChange={e=>setExchange(e.target.value as "NSE"|"BSE")}><option>NSE</option><option>BSE</option></select><input type="file" accept=".csv,.zip,.txt" onChange={e=>setFile(e.target.files?.[0]??null)}/><button className="button primary">Ingest EOD</button></div></form>
       <div className="table-wrap" style={{marginTop:14}}><table><thead><tr><th>Exchange</th><th>Status</th><th>Trade Date</th><th>Records</th><th>Fetched</th></tr></thead><tbody>{statuses.map(s=><tr key={s.exchange}><td>{s.exchange}</td><td>{s.status}</td><td>{s.trade_date??"--"}</td><td>{s.records_seen??"--"}</td><td>{s.fetched_at?new Date(s.fetched_at).toLocaleString():"--"}</td></tr>)}</tbody></table></div>
     </section>
+
+    <section className="panel" style={{marginTop:18}}><div className="eyebrow">Intelligence Context</div><h2>Sector / Institutional / Event data</h2><p className="muted">Upload source data separately so EOD Intelligence can join it with the market session.</p><form onSubmit={ingestContext}><div className="actions"><select value={contextKind} onChange={e=>setContextKind(e.target.value as "sector"|"institutional"|"event")}><option value="sector">Sector mapping</option><option value="institutional">FII/FPI + DII</option><option value="event">Corporate events</option></select><input type="file" accept=".csv,.txt" onChange={e=>setContextFile(e.target.files?.[0]??null)}/><button className="button primary">Ingest context</button></div></form></section>
 
     <section className="panel" style={{marginTop:18}}><div className="eyebrow">RBAC</div><h2>Users and roles</h2><div className="caption">{roles.length} roles configured</div>
       <div className="table-wrap" style={{marginTop:12}}><table><thead><tr><th>Email</th><th>Role</th><th>Verified</th><th>2FA</th><th>Action</th></tr></thead><tbody>{users.map(user=><tr key={user.user_id}><td>{user.email}</td><td><select value={roleDraft[user.user_id]??user.role} onChange={e=>setRoleDraft(d=>({...d,[user.user_id]:e.target.value}))}>{roles.map(role=><option value={role.name} key={role.name}>{role.name}</option>)}</select></td><td>{user.email_verified?"Yes":"No"}</td><td>{user.two_factor_enabled?"On":"Off"}</td><td><button className="button" onClick={()=>updateRole(user.user_id)}>Update</button></td></tr>)}</tbody></table></div>
