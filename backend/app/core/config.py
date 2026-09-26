@@ -49,6 +49,8 @@ class Settings(BaseSettings):
                 raise ValueError("Wildcard CORS is not allowed in production")
             if not self.mongodb_uri.startswith(("mongodb://", "mongodb+srv://")):
                 raise ValueError("A valid MongoDB URI is required in production")
+            if not self.allowed_host_list:
+                raise ValueError("ALLOWED_HOSTS must contain at least one host in production")
 
 settings = Settings()
 settings.validate_runtime()
