@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.core.config import settings
 from app.services.remote_ingestion import ingest_remote_eod
 from app.services.index_data import ingest_remote_index
+from app.services.remote_context import ingest_remote_context
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -57,6 +58,22 @@ async def run_scheduled_ingestion() -> dict:
             logger.exception("%s index ingestion failed", exchange)
             await _record_failure("index_data", exchange, today, template, str(exc))
             results.append({"exchange": exchange, "dataset": "index_data", "status": "failed", "error": str(exc)})
+
+    context_sources = [
+        ("institutional", settings.nse_institutional_url_template),
+        ("event", settings.nse_events_url_template),
+        ("sector", settings.sector_mapping_url_template),
+    ]
+    for kind, template in context_sources:
+        if not template:
+            results.append({"dataset": kind, "status": "not_configured"})
+            continue
+        try:
+            results.append(await ingest_remote_context(kind, template, today))
+        except Exception as exc:
+            logger.exception("%s context ingestion failed", kind)
+            await _record_failure(kind, "NSE", today, template, str(exc))
+            results.append({"dataset": kind, "status": "failed", "error": str(exc)})
     return {"trade_date": today.isoformat(), "results": results}
 
 
