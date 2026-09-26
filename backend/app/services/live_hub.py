@@ -23,6 +23,7 @@ class LiveHub:
     def __init__(self) -> None:
         self._clients: set[WebSocket] = set()
         self._lock = asyncio.Lock()
+        self.broker = None
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -33,7 +34,7 @@ class LiveHub:
         async with self._lock:
             self._clients.discard(websocket)
 
-    async def publish(self, payload: dict[str, Any]) -> None:
+    async def publish_local(self, payload: dict[str, Any]) -> None:
         async with self._lock:
             clients = list(self._clients)
 
@@ -46,6 +47,14 @@ class LiveHub:
 
         for client in stale:
             await self.disconnect(client)
+
+    async def publish(self, payload: dict[str, Any]) -> None:
+        await self.publish_local(payload)
+        if self.broker:
+            await self.broker.publish(payload)
+
+    def attach_broker(self, broker: Any) -> None:
+        self.broker = broker
 
     @property
     def client_count(self) -> int:
