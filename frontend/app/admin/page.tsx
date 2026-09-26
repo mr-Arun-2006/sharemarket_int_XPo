@@ -12,7 +12,8 @@ type Pipeline={scheduler_enabled:boolean;scheduler_running:boolean;sources:Recor
 export default function AdminPage(){
   const [users,setUsers]=useState<User[]>([]); const [roles,setRoles]=useState<Role[]>([]); const [statuses,setStatuses]=useState<Status[]>([]); const [pipeline,setPipeline]=useState<Pipeline|null>(null);
   const [roleDraft,setRoleDraft]=useState<Record<string,string>>({}); const [exchange,setExchange]=useState<"NSE"|"BSE">("NSE"); const [file,setFile]=useState<File|null>(null);
-  const [message,setMessage]=useState(""); const [error,setError]=useState(""); const [running,setRunning]=useState(false);\n  const [contextKind,setContextKind]=useState<"sector"|"institutional"|"event"|"fundamental">("sector"); const [contextFile,setContextFile]=useState<File|null>(null);
+  const [message,setMessage]=useState(""); const [error,setError]=useState(""); const [running,setRunning]=useState(false);
+  const [contextKind,setContextKind]=useState<"sector"|"institutional"|"event"|"fundamental">("sector"); const [contextFile,setContextFile]=useState<File|null>(null);
 
   async function load(){
     try{
