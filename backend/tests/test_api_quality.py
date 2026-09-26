@@ -1,4 +1,4 @@
-import pytest
+import asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.live import extract_websocket_access_token
@@ -12,15 +12,16 @@ def test_websocket_token_extraction_requires_protocol_marker():
     assert extract_websocket_access_token(None) is None
 
 
-@pytest.mark.asyncio
-async def test_liveness_endpoint_is_dependency_free():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport,
-        base_url="http://testserver",
-    ) as client:
-        response = await client.get("/api/v1/health/live")
+def test_liveness_endpoint_is_dependency_free():
+    async def run():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            return await client.get("/api/v1/health/live")
 
+    response = asyncio.run(run())
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert response.headers.get("x-request-id")
