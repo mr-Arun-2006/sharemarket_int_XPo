@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     app_env: str = "development"
     app_host: str = "0.0.0.0"
@@ -9,8 +10,17 @@ class Settings(BaseSettings):
     jwt_secret: str
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+
     cors_origins: str = "http://localhost:3000"
     allowed_hosts: str = "localhost,127.0.0.1"
+
+    # Refresh-token cookie controls. In cross-site deployments such as
+    # Vercel frontend + Render API, production should use None + Secure.
+    auth_cookie_name: str = "sharem_refresh"
+    auth_cookie_secure: bool = False
+    auth_cookie_samesite: str = "lax"
+    auth_cookie_domain: str = ""
+
     ai_base_url: str = ""
     ai_api_key: str = ""
     ai_model: str = ""
@@ -19,6 +29,8 @@ class Settings(BaseSettings):
     report_font_path: str = ""
     data_scheduler_enabled: bool = True
     ingestion_timeout_seconds: int = 45
+    ingestion_max_bytes: int = 50 * 1024 * 1024
+
     nse_eod_url_template: str = ""
     bse_eod_url_template: str = ""
     nse_index_url_template: str = ""
@@ -26,10 +38,13 @@ class Settings(BaseSettings):
     nse_institutional_url_template: str = ""
     nse_events_url_template: str = ""
     sector_mapping_url_template: str = ""
+
     live_provider_url: str = ""
     live_provider_api_key: str = ""
     live_ingest_api_key: str = ""
     live_provider_subscribe_json: str = ""
+    live_max_connections: int = 100
+    live_heartbeat_seconds: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -42,6 +57,22 @@ class Settings(BaseSettings):
         return [v.strip() for v in self.allowed_hosts.split(",") if v.strip()]
 
     def validate_runtime(self) -> None:
+        if self.access_token_minutes < 1 or self.access_token_minutes > 60:
+            raise ValueError("ACCESS_TOKEN_MINUTES must be between 1 and 60")
+        if self.refresh_token_days < 1 or self.refresh_token_days > 90:
+            raise ValueError("REFRESH_TOKEN_DAYS must be between 1 and 90")
+        if self.ai_timeout_seconds < 1 or self.ai_timeout_seconds > 120:
+            raise ValueError("AI_TIMEOUT_SECONDS must be between 1 and 120")
+        if self.ingestion_timeout_seconds < 5 or self.ingestion_timeout_seconds > 180:
+            raise ValueError("INGESTION_TIMEOUT_SECONDS must be between 5 and 180")
+        if self.ingestion_max_bytes < 1_000_000 or self.ingestion_max_bytes > 250_000_000:
+            raise ValueError("INGESTION_MAX_BYTES must be between 1 MB and 250 MB")
+        if self.live_max_connections < 1 or self.live_max_connections > 10_000:
+            raise ValueError("LIVE_MAX_CONNECTIONS must be between 1 and 10000")
+        if self.live_heartbeat_seconds < 10 or self.live_heartbeat_seconds > 300:
+            raise ValueError("LIVE_HEARTBEAT_SECONDS must be between 10 and 300")
+        if self.auth_cookie_samesite.lower() not in {"lax", "strict", "none"}:
+            raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict, or none")
         if self.app_env.lower() == "production":
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
@@ -51,6 +82,10 @@ class Settings(BaseSettings):
                 raise ValueError("A valid MongoDB URI is required in production")
             if not self.allowed_host_list:
                 raise ValueError("ALLOWED_HOSTS must contain at least one host in production")
+            if not self.auth_cookie_secure:
+                raise ValueError("AUTH_COOKIE_SECURE must be true in production")
+            if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
+                raise ValueError("SameSite=None requires a Secure cookie")
 
 settings = Settings()
 settings.validate_runtime()
