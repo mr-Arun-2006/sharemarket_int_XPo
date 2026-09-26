@@ -7,7 +7,7 @@ import { apiFetch } from "../../../lib/api";
 type StockResponse = {
   symbol:string; exchange:string; name?:string|null;
   latest:{trade_date:string;close:number|null;previous_close:number|null;change_pct:number|null;volume:number|null;data_status:string};
-  technical:Record<string,number|null|undefined>;
+  technical:Record<string,number|null|undefined>; fundamentals?:Record<string,unknown>|null; fundamentals_status?:string;
   history:{trade_date:string;close:number|null;volume:number|null;change_pct:number|null}[];
 };
 
@@ -39,6 +39,16 @@ export default function StockPage({ params }: { params: Promise<{symbol:string}>
         <div className="table-wrap"><table><thead><tr><th>Date</th><th>Close</th><th>Change</th><th>Volume</th></tr></thead><tbody>
           {data.history.slice(-20).map(row=><tr key={row.trade_date}><td>{row.trade_date}</td><td>{row.close??"--"}</td><td>{row.change_pct==null?"--":row.change_pct.toFixed(2)+"%"}</td><td>{row.volume??"--"}</td></tr>)}
         </tbody></table></div>
+      </section>
+      <section className="panel" style={{marginTop:18}}>
+        <div className="eyebrow">Fundamental Analysis</div><h2>{data.fundamentals_status==="available"?"Source-backed snapshot":"Fundamental data unavailable"}</h2>
+        {data.fundamentals ? <div className="table-wrap"><table><tbody>
+          {[
+            ["Market Cap","market_cap"],["Enterprise Value","enterprise_value"],["Revenue","revenue"],["Net Income","net_income"],["EPS","eps"],["P/E","pe"],["P/B","pb"],["ROE %","roe_pct"],["ROCE %","roce_pct"],["Debt / Equity","debt_to_equity"],["Dividend Yield %","dividend_yield_pct"]
+          ].map(([label,key])=><tr key={key}><th>{label}</th><td>{data.fundamentals?.[key] == null ? "--" : String(data.fundamentals[key])}</td></tr>)}
+          <tr><th>As of</th><td>{String(data.fundamentals.as_of ?? "--")}</td></tr>
+          <tr><th>Source</th><td>{String(data.fundamentals.source ?? "--")}</td></tr>
+        </tbody></table></div> : <p className="muted">No fundamental snapshot is currently stored for this symbol. The system does not infer fundamentals from price data.</p>}
       </section>
       <section className="panel" style={{marginTop:18}}>
         <div className="eyebrow">Technical Analysis</div><h2>Indicator snapshot</h2>
