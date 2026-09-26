@@ -3,6 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "../../components/AppShell";
+import { API_BASE_URL, apiFetch } from "../../lib/api";
+
+type IndexQuote = {
+  exchange: "NSE" | "BSE";
+  symbol: string | null;
+  trade_date: string | null;
+  close: number | null;
+  previous_close: number | null;
+  change_pct: number | null;
+  data_status: string;
+};
 
 type Tick = {
   exchange: "NSE" | "BSE";
@@ -18,27 +29,54 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_BASE_URL || "ws://localhost:8000";
 export default function DashboardPage() {
   const [connection, setConnection] = useState("connecting");
   const [ticks, setTicks] = useState<Record<string, Tick>>({});
+  const [indices, setIndices] = useState<IndexQuote[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttempt = useRef(0);
 
   useEffect(() => {
-    const socket = new WebSocket(WS_URL + "/api/v1/live/ws");
-    socketRef.current = socket;
-    socket.onopen = () => setConnection("live");
-    socket.onclose = () => setConnection("disconnected");
-    socket.onerror = () => setConnection("unavailable");
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === "market.tick" && message.data?.symbol) {
-          const tick = message.data as Tick;
-          setTicks((current) => ({ ...current, [tick.symbol]: tick }));
+    let active = true;
+    apiFetch<{indices: IndexQuote[]}>("/api/v1/market/index/overview")
+      .then((data) => { if (active) setIndices(data.indices || []); })
+      .catch(() => { if (active) setIndices([]); });
+
+    const connect = () => {
+      if (!active) return;
+      setConnection(reconnectAttempt.current === 0 ? "connecting" : "reconnecting");
+      const socket = new WebSocket((process.env.NEXT_PUBLIC_WS_BASE_URL || API_BASE_URL.replace(/^http/, "ws")) + "/api/v1/live/ws");
+      socketRef.current = socket;
+      socket.onopen = () => { reconnectAttempt.current = 0; if (active) setConnection("live"); };
+      socket.onclose = () => {
+        if (!active) return;
+        setConnection("disconnected");
+        const delay = Math.min(1000 * 2 ** reconnectAttempt.current, 15000);
+        reconnectAttempt.current += 1;
+        reconnectTimer.current = setTimeout(connect, delay);
+      };
+      socket.onerror = () => { if (active) setConnection("unavailable"); };
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === "market.tick" && message.data?.symbol) {
+            const tick = message.data as Tick;
+            setTicks((current) => ({ ...current, [tick.exchange + ":" + tick.symbol]: tick }));
+          }
+        } catch {
+          // Ignore malformed websocket frames.
         }
-      } catch {
-        // Ignore malformed websocket frames.
-      }
+      };
     };
-    return () => socket.close();
+    connect();
+    return () => {
+      active = false;
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      socketRef.current?.close();
+      socketRef.current = null;
+    };
   }, []);
+
+  const nseIndex = indices.find((item) => item.exchange === "NSE");
+  const bseIndex = indices.find((item) => item.exchange === "BSE");
 
   const movers = useMemo(
     () => Object.values(ticks)
@@ -61,8 +99,8 @@ export default function DashboardPage() {
 
       <section className="metric-grid">
         {[
-          ["NIFTY 50", "--", connection === "live" ? "Live WebSocket" : "Live feed unavailable"],
-          ["SENSEX", "--", connection === "live" ? "Live WebSocket" : "Live feed unavailable"],
+          ["NSE Index", nseIndex?.close == null ? "--" : nseIndex.close.toLocaleString(), nseIndex?.symbol ? nseIndex.symbol + " · " + (nseIndex.trade_date ?? "--") : "Index source unavailable"],
+          ["BSE Index", bseIndex?.close == null ? "--" : bseIndex.close.toLocaleString(), bseIndex?.symbol ? bseIndex.symbol + " · " + (bseIndex.trade_date ?? "--") : "Index source unavailable"],
           ["Live movers", String(movers.length), "Adaptive market ranking"],
         ].map(([title, value, status]) => (
           <article className="panel" key={title}>
