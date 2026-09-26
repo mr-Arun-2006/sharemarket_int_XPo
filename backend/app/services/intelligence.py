@@ -77,6 +77,20 @@ def build_ai_diagnosis(
         key_reasons.append(f"Top observed loser: {summary.top_losers[0].symbol} ({_fmt(summary.top_losers[0].change_pct)}%).")
 
     context = context or {}
+
+    sectors_ctx = context.get("sectors", [])
+    institutional_ctx = context.get("institutional_activity", [])
+    events_ctx = context.get("major_events", [])
+
+    if sectors_ctx:
+        key_reasons.append("Leading sector by average move: " + str(sectors_ctx[0].get("sector")) + " (" + _fmt(sectors_ctx[0].get("average_change_pct")) + "%).")
+        key_reasons.append("Weakest sector by average move: " + str(sectors_ctx[-1].get("sector")) + " (" + _fmt(sectors_ctx[-1].get("average_change_pct")) + "%).")
+    for row in institutional_ctx:
+        if row.get("net_value") is not None:
+            key_reasons.append(str(row.get("category", "Institutional")) + " net value: " + _fmt(row.get("net_value")) + ".")
+    if events_ctx:
+        key_reasons.append(str(len(events_ctx)) + " exchange/company event records are available for the trade date.")
+
     sections: dict[str, Any] = {
         "market": {
             "status": "available",
