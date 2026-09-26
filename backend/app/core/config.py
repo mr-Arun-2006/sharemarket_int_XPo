@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = ""
     ai_timeout_seconds: int = 30
+    report_font_path: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
