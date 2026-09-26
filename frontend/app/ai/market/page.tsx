@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AppShell } from "../../../components/AppShell";
 import { apiFetch } from "../../../lib/api";
 
@@ -18,6 +19,8 @@ type Analysis={
 const languages=[["en","English"],["ta","Tamil"],["hi","Hindi"],["gu","Gujarati"],["kn","Kannada"]];
 
 export default function MarketAIPage(){
+  const searchParams=useSearchParams();
+  const historicalId=searchParams.get("analysis");
   const [symbol,setSymbol]=useState(""); const [language,setLanguage]=useState("en");
   const [analysis,setAnalysis]=useState<Analysis|null>(null); const [error,setError]=useState(""); const [loading,setLoading]=useState(false);
   async function generate(event:FormEvent){
@@ -30,6 +33,14 @@ export default function MarketAIPage(){
     finally{setLoading(false);}
   }
   const status=(s?:Section)=>s?.status==="missing"?"Missing source data":"Available";
+
+  useEffect(()=>{
+    if(!historicalId) return;
+    apiFetch<Analysis>("/api/v1/intelligence/"+encodeURIComponent(historicalId))
+      .then(setAnalysis)
+      .catch(err=>setError(err instanceof Error?err.message:"Unable to load historical analysis"));
+  },[historicalId]);
+
   return <AppShell>
     <section className="page-heading"><div><div className="eyebrow">AI Intelligence / Market</div><h1>EOD market intelligence</h1><p className="lead">Generate a source-grounded diagnosis from the validated EOD dataset. Deep stock analysis uses the same evidence layer.</p></div></section>
     <section className="panel"><form onSubmit={generate} className="analysis-form">
