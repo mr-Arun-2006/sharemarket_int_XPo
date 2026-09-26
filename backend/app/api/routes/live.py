@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.db.mongo import get_database
 from app.services.live_hub import live_hub
+from app.services.alert_engine import evaluate_live_tick
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
 
@@ -37,6 +38,8 @@ async def ingest_tick(payload: LiveTickRequest):
     db = get_database()
     await db.market_data.insert_one(document)
 
+    triggered_alerts = await evaluate_live_tick(payload.model_dump())
+
     await live_hub.publish({
         "type": "market.tick",
         "data": {
@@ -46,7 +49,7 @@ async def ingest_tick(payload: LiveTickRequest):
         },
     })
 
-    return {"status": "published", "symbol": payload.symbol.upper()}
+    return {"status": "published", "symbol": payload.symbol.upper(), "triggered_alerts": triggered_alerts}
 
 
 @router.websocket("/ws")
