@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     live_provider_url: str = ""
     live_provider_api_key: str = ""
     live_ingest_api_key: str = ""
+    live_provider_subscribe_json: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
