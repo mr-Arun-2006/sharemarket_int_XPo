@@ -71,11 +71,11 @@ BSE_INDEX_URL_TEMPLATE=
 
 URL templates may use `{date}`, `{ddmmyyyy}`, `{ddmmyy}`, or `{yyyymmdd}`. The source URL must be an official exchange/distribution endpoint available to the deployment.
 
-NSE's current reports page lists **CM-UDiFF Common Bhavcopy Final (zip)** as the current capital-market bhavcopy and states that the older CM Bhavcopy/Common Bhavcopy CSV reports were discontinued from July 8, 2024. The repository therefore does not hard-code the discontinued CSV URL. citeturn116990search0turn623765view1
+NSE's current reports page lists **CM-UDiFF Common Bhavcopy Final (zip)** as the current capital-market bhavcopy and states that the older CM Bhavcopy/Common Bhavcopy CSV reports were discontinued from July 8, 2024. The repository therefore does not hard-code the discontinued CSV URL.
 
-BSE states that its daily EOD bhav-copy and historical market-data products are available through its information-products offering; the production deployment should use the access method permitted for the account rather than assuming an unrestricted public endpoint. citeturn222845search3
+BSE states that its daily EOD bhav-copy and historical market-data products are available through its information-products offering; the production deployment should use the access method permitted for the account rather than assuming an unrestricted public endpoint.
 
-The application market-status service uses the documented normal NSE equity session of **09:15-15:30 IST**. It intentionally does not claim holiday accuracy until an exchange holiday calendar is connected. citeturn485311search0
+The application market-status service uses the normal NSE equity session of **09:15-15:30 IST** and can use the stored exchange-holiday calendar when it is populated.
 
 Admin controls:
 ```text
@@ -123,3 +123,24 @@ Backend hardening includes authentication rate limiting, trusted-host validation
 Frontend hardening includes a shared API client with one-shot access-token refresh, network error handling, a global loading state, a global error boundary, reconnecting WebSocket market monitoring, dedicated index-data rendering, responsive/accessibility states, and TypeScript/build validation.
 
 Provider credentials are intentionally external configuration. Deployment is not executed by the repository CI.
+### Authentication hardening
+
+Access tokens are kept only in browser memory. Refresh tokens are never persisted in JavaScript storage; the backend issues them as HttpOnly cookies. Production deployments should set:
+
+    APP_ENV=production
+    AUTH_COOKIE_SECURE=true
+    AUTH_COOKIE_SAMESITE=none
+    CORS_ORIGINS=https://<your-frontend-domain>
+    ALLOWED_HOSTS=<your-api-domain>
+
+The refresh endpoint requires the `X-Requested-With: ShareM-Int-Xpo` header to add a CSRF barrier for browser session rotation.
+
+### Live WebSocket security
+
+The market WebSocket requires an authenticated short-lived access token supplied through the WebSocket subprotocol handshake rather than the URL. Connections are capped by `LIVE_MAX_CONNECTIONS` and receive periodic heartbeat frames controlled by `LIVE_HEARTBEAT_SECONDS`.
+
+### Operational safety
+
+Remote market-data downloads enforce `INGESTION_TIMEOUT_SECONDS` and `INGESTION_MAX_BYTES`. The EOD scheduler uses a distributed MongoDB lease that renews during long-running ingestion so multiple backend instances do not start the same job concurrently.
+
+Production logs include a request ID that is returned in the `X-Request-ID` response header, allowing an operational log entry and a user-visible error to be correlated without exposing exception internals.
