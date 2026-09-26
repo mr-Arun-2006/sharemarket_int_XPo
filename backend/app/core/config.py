@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     bse_eod_url_template: str = ""
     nse_index_url_template: str = ""
     bse_index_url_template: str = ""
+    nse_institutional_url_template: str = ""
+    nse_events_url_template: str = ""
+    sector_mapping_url_template: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
