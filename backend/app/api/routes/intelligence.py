@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Query
+
 from app.db.mongo import get_database
 from app.services.eod_engine import build_market_summary
 from app.schemas.market import EODRecord
@@ -9,17 +13,24 @@ router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
 
 DISCLAIMER = "For informational purposes only. This is not investment advice."
 
+
+async def _load_eod_records(db, limit: int = 30000) -> list[EODRecord]:
+    cursor = db.eod_market_data.find({}, {"_id": 0}).sort([("trade_date", -1)])
+    rows: list[EODRecord] = []
+    async for document in cursor:
+        if len(rows) >= limit:
+            break
+        try:
+            rows.append(EODRecord.model_validate(document))
+        except Exception:
+            continue
+    return rows
+
+
 @router.post("/eod")
 async def generate_eod_intelligence(symbol: str | None = Query(default=None, max_length=32)):
     db = get_database()
-    cursor = db.eod_market_data.find({}, {"records": 1})
-    records: list[EODRecord] = []
-    async for document in cursor:
-        for raw in document.get("records", []):
-            try:
-                records.append(EODRecord.model_validate(raw))
-            except Exception:
-                continue
+    records = await _load_eod_records(db)
     if not records:
         raise HTTPException(404, "No EOD dataset is available")
 
@@ -47,15 +58,17 @@ async def generate_eod_intelligence(symbol: str | None = Query(default=None, max
         "top_losers": [item.__dict__ for item in summary.top_losers],
         "disclaimer": DISCLAIMER,
     }
+
     if symbol:
-        symbol_upper=symbol.upper()
-        matches=[r for r in records if r.exchange=="NSE" and r.symbol.upper()==symbol_upper]
+        symbol_upper = symbol.upper()
+        matches = [r for r in records if r.exchange == "NSE" and r.symbol.upper() == symbol_upper]
         if not matches:
             raise HTTPException(404, f"No NSE EOD data found for {symbol}")
-        result["selected_stock"]={
-            "symbol":symbol_upper,
-            "sessions": sorted([r.trade_date for r in matches])[-6:],
-            "latest_close": sorted(matches,key=lambda r:r.trade_date)[-1].close,
+        matches.sort(key=lambda r: r.trade_date)
+        result["selected_stock"] = {
+            "symbol": symbol_upper,
+            "sessions": [r.trade_date for r in matches[-6:]],
+            "latest_close": matches[-1].close,
         }
 
     await db.analyses.insert_one(result)
