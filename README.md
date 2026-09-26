@@ -113,3 +113,13 @@ Admin controls:
 
     GET  /api/v1/admin/data-pipeline/status
     POST /api/v1/admin/data-pipeline/run
+
+## Quality and production hardening
+
+The repository CI validates backend tests, Python compilation, frontend TypeScript and the Next.js production build.
+
+Backend hardening includes authentication rate limiting, trusted-host validation, security response headers, distributed scheduler locking, Redis live-market pub/sub, configurable live-provider reconnect handling, source-backed fundamental data, exchange holiday support, and explicit data-status handling.
+
+Frontend hardening includes a shared API client with one-shot access-token refresh, network error handling, a global loading state, a global error boundary, reconnecting WebSocket market monitoring, dedicated index-data rendering, responsive/accessibility states, and TypeScript/build validation.
+
+Provider credentials are intentionally external configuration. Deployment is not executed by the repository CI.
