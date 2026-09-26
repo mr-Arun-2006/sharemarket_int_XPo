@@ -51,13 +51,41 @@ async def ingest_remote_eod(exchange: str, url_template: str, target_day: date |
         raise ValueError(f"{exchange} EOD source URL template is not configured")
 
     day = target_day or datetime.now(timezone.utc).date()
-    url = expand_url(url_template, day)
     started = datetime.now(timezone.utc)
+    last_error = None
+    records = []
+    source_meta = {}
+    url = ""
+    attempted_dates = []
 
-    data, source_meta = await fetch_source(url)
-    records = parse_exchange_eod(data, exchange, filename=url.rsplit("/", 1)[-1] or "remote_eod")
+    # Exchange source availability can lag calendar dates because of weekends and holidays.
+    # Try the requested date and up to seven prior calendar days, accepting only an exact date match.
+    for offset in range(8):
+        candidate = day.fromordinal(day.toordinal() - offset)
+        attempted_dates.append(candidate.isoformat())
+        candidate_url = expand_url(url_template, candidate)
+        try:
+            data, candidate_meta = await fetch_source(candidate_url)
+            parsed = parse_exchange_eod(data, exchange, filename=candidate_url.rsplit("/", 1)[-1] or "remote_eod")
+            if not parsed:
+                raise ValueError(f"{exchange} source returned no parseable EOD rows")
+            unique_dates = {r.trade_date for r in parsed}
+            if unique_dates != {candidate.isoformat()}:
+                raise ValueError(
+                    f"{exchange} source date mismatch: expected {candidate.isoformat()}, got {sorted(unique_dates)}"
+                )
+            records = parsed
+            source_meta = candidate_meta
+            url = candidate_url
+            day = candidate
+            break
+        except Exception as exc:
+            last_error = exc
+
     if not records:
-        raise ValueError(f"{exchange} source returned no parseable EOD rows")
+        raise ValueError(
+            f"{exchange} source unavailable for recent trading-day window {attempted_dates}: {last_error}"
+        )
 
     document = build_ingestion_document(records, source=source_meta["url"], fetched_at=started)
     db = get_database()
