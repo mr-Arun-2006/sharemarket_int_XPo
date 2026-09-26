@@ -338,7 +338,7 @@ async def disable_2fa(
 async def refresh(
     response: Response,
     payload: RefreshRequest | None = None,
-    refresh_cookie: str | None = Cookie(default=None, alias="sharem_refresh"),
+    refresh_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     x_requested_with: str | None = Header(default=None),
 ):
     # The custom header makes browser refresh a non-simple CORS request and
