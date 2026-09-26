@@ -63,23 +63,7 @@ async def request_context(request: Request, call_next):
     request.state.request_id = request_id
     started = time.perf_counter()
 
-    try:
-        response = await call_next(request)
-    except Exception:
-        # The exception handler below creates the safe public response.
-        duration_ms = round((time.perf_counter() - started) * 1000, 2)
-        logger.exception(
-            json.dumps(
-                {
-                    "event": "request_failed",
-                    "request_id": request_id,
-                    "method": request.method,
-                    "path": request.url.path,
-                    "duration_ms": duration_ms,
-                }
-            )
-        )
-        raise
+    response = await call_next(request)
 
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
