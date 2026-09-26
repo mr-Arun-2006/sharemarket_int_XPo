@@ -5,6 +5,7 @@ from typing import Any
 
 from app.services.eod_engine import EODMarketSummary
 from app.services.technical import compute_technical_snapshot
+from app.services.fundamentals import get_fundamental_snapshot
 from app.schemas.market import EODRecord
 
 
@@ -130,6 +131,7 @@ def build_ai_diagnosis(
         technical = compute_technical_snapshot(matches)
         latest = matches[-1]
         selected_change = _stock_change(latest)
+        # Fundamental data is source-backed and may be missing for the selected symbol.\n        fundamentals = await get_fundamental_snapshot(symbol_upper, latest.trade_date)
         stock_evidence = [
             {
                 "id": "EV-STOCK-LATEST",
@@ -183,8 +185,18 @@ def build_ai_diagnosis(
                 "change_pct": selected_change,
             },
             "technical": technical.__dict__,
+            "fundamentals": fundamentals,
+            "fundamentals_status": "available" if fundamentals else "missing",
         }
         evidence.extend(stock_evidence)
+        if fundamentals:
+            evidence.append({
+                "id": "EV-STOCK-FUNDAMENTALS",
+                "type": "fundamental_data",
+                "label": f"{symbol_upper} fundamental snapshot",
+                "value": fundamentals,
+                "source": fundamentals.get("source_url") or fundamentals.get("source") or "fundamental_data dataset",
+            })
 
     return {
         "language": language,
