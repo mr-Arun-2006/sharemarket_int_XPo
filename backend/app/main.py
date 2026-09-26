@@ -10,6 +10,7 @@ from app.api.routes.live import router as live_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.admin import router as admin_router
 from app.api.routes.stocks import router as stocks_router
+from app.api.routes.screener import router as screener_router
 
 app = FastAPI(title="ShareM Int Xpo API", version="1.0.0", lifespan=mongo_lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
@@ -26,3 +27,4 @@ app.include_router(live_router)
 app.include_router(sessions_router)
 app.include_router(admin_router)
 app.include_router(stocks_router)
+app.include_router(screener_router)
