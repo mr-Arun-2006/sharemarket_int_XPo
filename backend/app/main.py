@@ -14,6 +14,7 @@ from app.api.routes.screener import router as screener_router
 from app.api.routes.exchanges import router as exchanges_router
 from app.api.routes.alerts import router as alerts_router
 from app.api.routes.reports import router as reports_router
+from app.api.routes.portfolio import router as portfolio_router
 
 app = FastAPI(title="ShareM Int Xpo API", version="1.0.0", lifespan=mongo_lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
@@ -34,3 +35,4 @@ app.include_router(screener_router)
 app.include_router(exchanges_router)
 app.include_router(alerts_router)
 app.include_router(reports_router)
+app.include_router(portfolio_router)
