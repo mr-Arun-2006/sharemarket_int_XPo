@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     ai_model: str = ""
     ai_timeout_seconds: int = 30
     report_font_path: str = ""
+    data_scheduler_enabled: bool = True
+    ingestion_timeout_seconds: int = 45
+    nse_eod_url_template: str = ""
+    bse_eod_url_template: str = ""
+    nse_index_url_template: str = ""
+    bse_index_url_template: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
