@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { AppShell } from "../../../components/AppShell";
 import { apiDownload, apiFetch } from "../../../lib/api";
 
-type Section={status:string;diagnosis?:string|null;summary?:string;key_reasons?:string[];symbol?:string;latest?:{trade_date:string;close:number|null;change_pct:number|null};technical?:Record<string,number|null|undefined>;evidence?:unknown[]};
+type Section={status:string;diagnosis?:string|null;summary?:string;key_reasons?:string[];symbol?:string;latest?:{trade_date:string;close:number|null;change_pct:number|null};technical?:Record<string,number|null|undefined>;evidence?:unknown[];leaders?:{sector:string;stocks_covered:number;average_change_pct:number;positive:number;negative:number}[];rows?:{category:string;buy_value:number|null;sell_value:number|null;net_value:number|null}[];items?:{symbol?:string|null;subject:string;details:string;broadcast_at?:string;source_url?:string}[]};
 type Analysis={
   analysis_id:string; analysis_type:string; trade_date:string; status:string; language:string;
   market_metrics:{nse_stocks:number;positive:number;negative:number;unchanged:number;breadth_pct:number|null;mean_change_pct:number|null};
@@ -75,7 +75,11 @@ export default function MarketAIPage(){
 
       {[
         ["Sectors","sectors"],["Institutional Activity","institutional_activity"],["Major Events","major_events"]
-      ].map(([title,key])=>{const section=analysis.hierarchy[key];return <article className="panel" key={key}><div className="eyebrow">{title}</div><h2>{section?.diagnosis??status(section)}</h2><p className="muted">{section?.summary}</p></article>})}
+      ].map(([title,key])=>{const section=analysis.hierarchy[key];return <article className="panel" key={key}><div className="eyebrow">{title}</div><h2>{section?.diagnosis??status(section)}</h2><p className="muted">{section?.summary}</p>
+        {key==="sectors"&&section?.leaders&&section.leaders.length>0&&<div className="table-wrap"><table><thead><tr><th>Sector</th><th>Stocks</th><th>Avg Change</th></tr></thead><tbody>{section.leaders.slice(0,6).map(x=><tr key={x.sector}><td>{x.sector}</td><td>{x.stocks_covered}</td><td>{x.average_change_pct.toFixed(2)}%</td></tr>)}</tbody></table></div>}
+        {key==="institutional_activity"&&section?.rows&&section.rows.length>0&&<div className="table-wrap"><table><thead><tr><th>Category</th><th>Buy</th><th>Sell</th><th>Net</th></tr></thead><tbody>{section.rows.map(x=><tr key={x.category}><td>{x.category}</td><td>{x.buy_value??"--"}</td><td>{x.sell_value??"--"}</td><td>{x.net_value??"--"}</td></tr>)}</tbody></table></div>}
+        {key==="major_events"&&section?.items&&section.items.length>0&&<div className="evidence-list">{section.items.slice(0,5).map((x,i)=><div key={i}><strong>{x.symbol??"--"}</strong> · {x.subject}<br/><span className="caption">{x.broadcast_at??"--"}</span></div>)}</div>}
+      </article>})}
 
       <article className="panel full"><div className="eyebrow">AI Narrative</div><h2>{analysis.ai_provider==="generated"?"Provider-generated explanation":"Evidence-grounded baseline explanation"}</h2>{analysis.ai_narrative?<p style={{whiteSpace:"pre-wrap",lineHeight:1.7}}>{analysis.ai_narrative}</p>:<p className="muted">No external AI provider is configured. The system returned the deterministic evidence-grounded diagnosis and explicitly marked unavailable data.</p>}</article>
 
