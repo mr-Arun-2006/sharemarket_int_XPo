@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from app.api.deps.auth import require_permission
 from app.db.mongo import get_database
 from app.services.context_data import build_market_context, parse_context_csv
+from app.services.exchange_calendar import ingest_holidays, parse_holiday_csv
 
 router = APIRouter(prefix="/api/v1/market/context", tags=["market-context"])
 
@@ -18,13 +19,13 @@ async def ingest_context(
     file: UploadFile = File(...),
     current_user: dict = Depends(require_permission("admin.data.manage")),
 ):
-    if kind not in {"sector", "institutional", "event"}:
+    if kind not in {"sector", "institutional", "event", "holiday"}:
         raise HTTPException(400, "kind must be sector, institutional, event or holiday")
     data = await file.read()
     if not data:
         raise HTTPException(400, "Uploaded context file is empty")
 
-    rows = parse_context_csv(data, kind)
+    rows = parse_holiday_csv(data) if kind == "holiday" else parse_context_csv(data, kind)
     if not rows:
         raise HTTPException(400, f"No valid {kind} rows were found")
 
@@ -32,7 +33,10 @@ async def ingest_context(
     now = datetime.now(timezone.utc)
     ingestion_id = str(uuid4())
 
-    if kind == "sector":
+    if kind == "holiday":
+        await ingest_holidays(rows, source="admin-upload", ingestion_id=ingestion_id)
+        dataset = "exchange_holidays"
+    elif kind == "sector":
         await db.sector_data.delete_many({})
         await db.sector_data.insert_many(
             [{**row, "ingestion_id": ingestion_id, "ingested_at": now} for row in rows],
