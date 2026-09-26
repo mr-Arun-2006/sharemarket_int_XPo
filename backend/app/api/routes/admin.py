@@ -88,7 +88,7 @@ async def data_pipeline_status(current_user: dict = Depends(require_permission("
         "scheduler_enabled": settings.data_scheduler_enabled,
         "scheduler_running": scheduler.running,
         "sources": {
-            "NSE_EOD": bool(settings.nse_eod_url_template),
+            "NSE_EOD": True,
             "BSE_EOD": bool(settings.bse_eod_url_template),
             "NSE_INDEX": bool(settings.nse_index_url_template),
             "BSE_INDEX": bool(settings.bse_index_url_template),
