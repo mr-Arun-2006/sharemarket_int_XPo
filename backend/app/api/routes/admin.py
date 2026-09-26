@@ -76,3 +76,31 @@ async def update_user_role(user_id: str, payload: UserRoleUpdate, current_user: 
 async def audit(_: dict = Depends(require_permission("admin.audit.read"))):
     items = await get_database().audit_logs.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
     return {"events": items}
+
+
+@router.get("/data-pipeline/status")
+async def data_pipeline_status(current_user: dict = Depends(require_permission("admin.data.manage"))):
+    from app.core.config import settings
+    from app.services.scheduler import scheduler
+    db = get_database()
+    runs = await db.ingestion_runs.find({}, {"_id": 0}).sort("fetched_at", -1).to_list(length=20)
+    return {
+        "scheduler_enabled": settings.data_scheduler_enabled,
+        "scheduler_running": scheduler.running,
+        "sources": {
+            "NSE_EOD": bool(settings.nse_eod_url_template),
+            "BSE_EOD": bool(settings.bse_eod_url_template),
+            "NSE_INDEX": bool(settings.nse_index_url_template),
+            "BSE_INDEX": bool(settings.bse_index_url_template),
+        },
+        "recent_runs": runs,
+        "checked_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+    }
+
+
+@router.post("/data-pipeline/run")
+async def run_data_pipeline(current_user: dict = Depends(require_permission("admin.data.manage"))):
+    from app.services.scheduler import run_scheduled_ingestion
+    result = await run_scheduled_ingestion()
+    await record_audit("admin.data_pipeline_run", user_id=current_user["user_id"], target_type="data_pipeline")
+    return result
