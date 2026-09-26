@@ -88,13 +88,17 @@ async def market_status():
     open_time = time(9, 15)
     close_time = time(15, 30)
     weekday = now.weekday() < 5
-    in_session = weekday and open_time <= now.time() < close_time
+    db = get_database()
+    holiday = await db.exchange_holidays.find_one({"exchange": "NSE", "date": now.date().isoformat()}, {"_id": 0, "description": 1})
+    calendar_available = await db.exchange_holidays.find_one({"exchange": "NSE"}, {"_id": 0, "date": 1}) is not None
+    in_session = weekday and not holiday and open_time <= now.time() < close_time
     return {
         "timestamp": now.isoformat(),
         "timezone": "Asia/Kolkata",
         "nse": {"status": "open" if in_session else "closed", "normal_session": "09:15-15:30"},
         "bse": {"status": "open" if in_session else "closed", "normal_session": "09:15-15:30"},
-        "calendar_basis": "weekday schedule only; exchange holiday calendar is not loaded",
+        "calendar_basis": "NSE holiday calendar" if calendar_available else "weekday schedule only; exchange holiday calendar is not loaded",
+        "holiday": holiday,
         "data_layers": {
             "live": "websocket",
             "eod": "scheduled after market close",
