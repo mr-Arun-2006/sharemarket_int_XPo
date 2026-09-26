@@ -43,6 +43,8 @@ async def _ensure_indexes() -> None:
         [("symbol", 1), ("as_of", -1)],
         name="fundamental_symbol_asof",
     )
+    await db.scheduler_locks.create_index("lock_name", unique=True, name="scheduler_lock_unique")
+    await db.scheduler_locks.create_index("expires_at", expireAfterSeconds=0, name="scheduler_lock_expiry_ttl")
 
 
 def get_mongo_client() -> AsyncMongoClient:
