@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 const primaryNav = [
@@ -21,6 +22,7 @@ const primaryNav = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
     <div className="product-shell">
@@ -33,9 +35,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav className="sidebar-nav" aria-label="Primary navigation">
-          {primaryNav.map(([label, href]) => (
-            <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>
-          ))}
+          {primaryNav.map(([label, href]) => {
+            const active = pathname === href || pathname.startsWith(href + "/");
+            return (
+              <Link
+                key={href}
+                className={active ? "active" : ""}
+                href={href}
+                onClick={() => setOpen(false)}
+              >
+                {label}
+              </Link>
+            );
+          })}
         </nav>
       </aside>
 
@@ -44,10 +56,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="product-main">
         <header className="product-topbar">
           <button className="menu-button" onClick={() => setOpen(true)} aria-label="Open menu">☰</button>
-          <div className="global-search">AI Global Search</div>
-          <div className="market-status"><span className="status-dot" /> Market Status</div>
+          <div className="global-search" role="search">AI Global Search</div>
+          <button className="market-status" type="button"><span className="status-dot" /> Market Status</button>
           <Link className="top-action" href="/exchanges">NSE vs BSE</Link>
-          <select className="language-select" defaultValue="English" aria-label="AI response language">
+          <select className="language-select" defaultValue="文 English" aria-label="AI response language">
             <option>文 English</option>
             <option>文 தமிழ்</option>
             <option>文 हिंदी</option>
