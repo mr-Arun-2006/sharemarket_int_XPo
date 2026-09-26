@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -112,10 +113,35 @@ async def run_scheduled_ingestion() -> dict:
         return {"status": "locked", "lock_name": lock_name}
     if not lock or lock.get("owner_id") != SCHEDULER_INSTANCE_ID:
         return {"status": "locked", "lock_name": lock_name}
+    renewal_task = asyncio.create_task(_renew_scheduler_lease(db, lock_name))
     try:
         return await _run_scheduled_ingestion()
     finally:
-        await db.scheduler_locks.delete_one({"lock_name": lock_name, "owner_id": SCHEDULER_INSTANCE_ID})
+        renewal_task.cancel()
+        try:
+            await renewal_task
+        except asyncio.CancelledError:
+            pass
+        await db.scheduler_locks.delete_one(
+            {"lock_name": lock_name, "owner_id": SCHEDULER_INSTANCE_ID}
+        )
+
+
+async def _renew_scheduler_lease(db, lock_name: str) -> None:
+    """Renew the distributed lease while a scheduled job is still running."""
+    while True:
+        await asyncio.sleep(120)
+        now = datetime.now(ZoneInfo("UTC"))
+        await db.scheduler_locks.update_one(
+            {"lock_name": lock_name, "owner_id": SCHEDULER_INSTANCE_ID},
+            {
+                "$set": {
+                    "expires_at": now + timedelta(minutes=10),
+                    "updated_at": now,
+                }
+            },
+        )
+
 
 def start_scheduler() -> None:
     if not settings.data_scheduler_enabled or scheduler.running:

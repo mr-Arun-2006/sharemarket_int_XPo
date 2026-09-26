@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.db.mongo import get_mongo_client
+from app.services.redis_live import redis_live_broker
 
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
@@ -12,12 +13,14 @@ async def health():
     return {
         "status": "ok",
         "service": "sharem-int-xpo-api",
-        "environment": settings.app_env,
+        "version": "1.1.0",
     }
 
 
 @router.get("/live")
 async def live():
+    # Liveness deliberately avoids external dependency checks so an unhealthy
+    # database does not cause the process itself to be restarted.
     return {"status": "ok"}
 
 
@@ -27,11 +30,24 @@ async def ready():
     try:
         await get_mongo_client().admin.command("ping")
         checks["mongodb"] = "ok"
-    except Exception as exc:
+    except Exception:
         checks["mongodb"] = "error"
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "checks": checks, "error": str(exc)[:500]},
+            content={"status": "not_ready", "checks": checks},
         )
+
+    if settings.redis_url:
+        try:
+            if not redis_live_broker.client:
+                raise RuntimeError("Redis client is not initialized")
+            await redis_live_broker.client.ping()
+            checks["redis"] = "ok"
+        except Exception:
+            checks["redis"] = "error"
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "checks": checks},
+            )
 
     return {"status": "ready", "checks": checks}
