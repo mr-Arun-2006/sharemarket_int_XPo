@@ -63,6 +63,7 @@ async def generate_eod_intelligence(
     analysis_id = str(uuid4())
     result = {
         "analysis_id": analysis_id,
+        "user_id": current_user["user_id"],
         "analysis_type": "stock" if symbol else "market",
         "trade_date": summary.trade_date,
         "generated_at": datetime.now(timezone.utc),
@@ -123,3 +124,89 @@ async def intelligence_history(
         {"_id": 0, "analysis_id": 1, "analysis_type": 1, "trade_date": 1, "generated_at": 1, "language": 1, "status": 1, "ai_provider": 1, "hierarchy.market.diagnosis": 1, "hierarchy.selected_stock.symbol": 1},
     ).sort("generated_at", -1).to_list(length=limit)
     return {"analyses": rows, "count": len(rows)}
+
+
+@router.get("/{analysis_id}")
+async def get_analysis(analysis_id: str, current_user: dict = Depends(get_current_user)):
+    row = await get_database().analyses.find_one(
+        {"analysis_id": analysis_id, "user_id": current_user["user_id"]},
+        {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(404, "Analysis not found")
+    return row
+
+
+@router.get("/{analysis_id}/compare-latest")
+async def compare_historical_analysis(analysis_id: str, current_user: dict = Depends(require_permission("reports.read"))):
+    db = get_database()
+    original = await db.analyses.find_one(
+        {"analysis_id": analysis_id, "user_id": current_user["user_id"]},
+        {"_id": 0},
+    )
+    if not original:
+        raise HTTPException(404, "Analysis not found")
+
+    symbol = None
+    selected = (original.get("hierarchy") or {}).get("selected_stock") or {}
+    if original.get("analysis_type") == "stock":
+        symbol = selected.get("symbol")
+
+    records = await _load_eod_records(db)
+    if not records:
+        raise HTTPException(404, "No current EOD dataset is available")
+
+    try:
+        summary = build_market_summary(records)
+        latest = build_ai_diagnosis(
+            summary, records, language=original.get("language", "en"), symbol=symbol
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    original_metrics = original.get("market_metrics", {})
+    latest_metrics = {
+        "nse_stocks": summary.nse_stocks,
+        "positive": summary.nse_positive,
+        "negative": summary.nse_negative,
+        "unchanged": summary.nse_unchanged,
+        "breadth_pct": summary.nse_breadth_pct,
+        "mean_change_pct": summary.nse_mean_change_pct,
+    }
+
+    stock_original = selected.get("latest") or {}
+    stock_latest = (latest.get("sections") or {}).get("selected_stock", {}).get("latest") or {}
+
+    return {
+        "analysis_id": analysis_id,
+        "original": {
+            "trade_date": original.get("trade_date"),
+            "generated_at": original.get("generated_at"),
+            "regime": original.get("regime"),
+            "market_metrics": original_metrics,
+            "stock": stock_original if symbol else None,
+        },
+        "latest": {
+            "trade_date": summary.trade_date,
+            "generated_at": datetime.now(timezone.utc),
+            "regime": {
+                "label": summary.regime.label,
+                "reasons": summary.regime.reasons,
+            },
+            "market_metrics": latest_metrics,
+            "stock": stock_latest if symbol else None,
+        },
+        "comparison": {
+            "market": [
+                {"metric": "NSE stocks", "original": original_metrics.get("nse_stocks"), "latest": latest_metrics.get("nse_stocks")},
+                {"metric": "Positive", "original": original_metrics.get("positive"), "latest": latest_metrics.get("positive")},
+                {"metric": "Negative", "original": original_metrics.get("negative"), "latest": latest_metrics.get("negative")},
+                {"metric": "Breadth %", "original": original_metrics.get("breadth_pct"), "latest": latest_metrics.get("breadth_pct")},
+                {"metric": "Mean change %", "original": original_metrics.get("mean_change_pct"), "latest": latest_metrics.get("mean_change_pct")},
+            ],
+            "stock": [
+                {"metric": "Close", "original": stock_original.get("close"), "latest": stock_latest.get("close")},
+                {"metric": "Change %", "original": stock_original.get("change_pct"), "latest": stock_latest.get("change_pct")},
+            ] if symbol else [],
+        },
+    }
