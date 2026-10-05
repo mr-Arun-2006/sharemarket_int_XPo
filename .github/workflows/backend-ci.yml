@@ -30,17 +30,33 @@ jobs:
       JWT_SECRET: ci-test-secret-012345678901234567890123456
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - name: Install backend dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
           pip check
+      - name: Validate production configuration
+        working-directory: backend
+        env:
+          APP_ENV: production
+          AUTH_COOKIE_SECURE: "true"
+          AUTH_COOKIE_SAMESITE: none
+          CORS_ORIGINS: https://frontend.example.com
+          ALLOWED_HOSTS: api.example.com
+          DOCS_ENABLED: "false"
+          SMTP_HOST: smtp.example.com
+          SMTP_PORT: "587"
+          SMTP_USER: ci-user
+          SMTP_PASSWORD: ci-password
+          SMTP_FROM: ci@example.com
+          SMTP_USE_TLS: "true"
+        run: python -c "from app.main import app; print(app.title, app.version)"
       - name: Import application
         working-directory: backend
         run: python -c "from app.main import app; print(app.title, app.version)"
@@ -49,15 +65,17 @@ jobs:
         run: pytest -q
       - name: Compile backend
         run: python -m compileall -q backend/app
+      - name: Build backend production image
+        run: docker build --tag sharem-int-xpo-backend:ci backend
 
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install frontend dependencies

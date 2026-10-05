@@ -27,3 +27,24 @@ def test_liveness_endpoint_is_dependency_free():
     assert response.headers.get("x-request-id")
     assert response.headers.get("x-content-type-options") == "nosniff"
     assert response.headers.get("x-frame-options") == "DENY"
+
+ 
+ 
+def test_oversized_eod_upload_is_rejected():
+    import asyncio
+    from fastapi import HTTPException
+    from app.api.routes.market import _read_limited_upload
+    from app.core.config import settings
+
+    class FakeUpload:
+        async def read(self, size=-1):
+            return b"x" * (settings.ingestion_max_bytes + 1)
+
+    async def run():
+        try:
+            await _read_limited_upload(FakeUpload())
+        except HTTPException as exc:
+            return exc.status_code
+        return None
+
+    assert asyncio.run(run()) == 413

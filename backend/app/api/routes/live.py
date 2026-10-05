@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSoc
 from pydantic import BaseModel, Field
 
 from app.db.mongo import get_database
-from app.api.deps.auth import get_current_user, get_user_from_access_token, require_permission
+from app.api.deps.auth import get_optional_current_user, get_user_from_access_token, require_permission
 from app.core.config import settings
 from app.services.live_hub import live_hub
 from app.services.live_market import get_relevant_live_quotes, process_live_tick
@@ -35,14 +35,16 @@ def extract_websocket_access_token(header_value: str | None) -> str | None:
 
 async def require_live_ingest(
     x_live_ingest_key: str | None = Header(default=None),
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_optional_current_user),
 ) -> dict:
-    if settings.live_ingest_api_key:
-        if x_live_ingest_key and hmac.compare_digest(
-            x_live_ingest_key, settings.live_ingest_api_key
-        ):
-            return {"service": True, "user": user}
-        raise HTTPException(403, "Invalid live-ingest service key")
+    if settings.live_ingest_api_key and x_live_ingest_key and hmac.compare_digest(
+        x_live_ingest_key, settings.live_ingest_api_key
+    ):
+        return {"service": True, "user": user}
+
+    if user is None:
+        raise HTTPException(401, "Authentication required")
+
     if user.get("role") == "admin":
         return {"service": False, "user": user}
     role = await get_database().roles.find_one({"name": user.get("role")})

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import secrets
 
+from pymongo import ReturnDocument
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 from pymongo.errors import DuplicateKeyError
 
@@ -23,10 +24,12 @@ from app.schemas.auth import (
     TwoFactorCodeRequest,
     TwoFactorVerifyRequest,
     VerifyRequest,
+    EmailRequest,
 )
 from app.api.deps.auth import get_current_user
 from app.api.deps.rate_limit import rate_limit
 from app.services.audit import record_audit
+from app.services.email_delivery import send_verification_email
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -123,6 +126,21 @@ async def register(payload: RegisterRequest):
             "expires_at": now + timedelta(minutes=10),
         }
     )
+    try:
+        await send_verification_email(email, otp)
+    except Exception as exc:
+        await record_audit(
+            "auth.verification_email_failed",
+            user_id=user_id,
+            target_type="user",
+            target_id=user_id,
+        )
+        if settings.app_env.lower() == "production":
+            await db.auth_challenges.delete_many(
+                {"user_id": user_id, "purpose": "email_verification"}
+            )
+            raise HTTPException(503, "Email verification service is temporarily unavailable") from exc
+
     await record_audit(
         "auth.register",
         user_id=user_id,
@@ -139,12 +157,15 @@ async def register(payload: RegisterRequest):
 async def verify(payload: VerifyRequest):
     db = get_database()
     email = str(payload.email).lower()
-    challenge = await db.auth_challenges.find_one(
+    challenge = await db.auth_challenges.find_one_and_update(
         {
             "email": email,
             "purpose": "email_verification",
             "expires_at": {"$gt": _now()},
-        }
+            "attempts": {"$lt": 5},
+        },
+        {"$inc": {"attempts": 1}},
+        return_document=ReturnDocument.AFTER,
     )
     if not challenge or not secrets.compare_digest(
         hash_token(payload.otp), challenge["otp_hash"]
@@ -165,6 +186,53 @@ async def verify(payload: VerifyRequest):
         target_id=challenge["user_id"],
     )
     return {"status": "verified"}
+
+
+@router.post(
+    "/resend-verification",
+    dependencies=[rate_limit("auth.resend_verification", 3, 900)],
+)
+async def resend_verification(payload: EmailRequest):
+    db = get_database()
+    email = str(payload.email).lower()
+    user = await db.user.find_one(
+        {"email_normalized": email},
+        {"_id": 0, "user_id": 1, "email_verified": 1},
+    )
+
+    # Return the same response for unknown addresses to avoid account enumeration.
+    response = {"status": "verification_sent"}
+    if not user or user.get("email_verified"):
+        return response
+
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+    now = _now()
+    await db.auth_challenges.delete_many(
+        {"user_id": user["user_id"], "purpose": "email_verification"}
+    )
+    await db.auth_challenges.insert_one(
+        {
+            "user_id": user["user_id"],
+            "email": email,
+            "purpose": "email_verification",
+            "otp_hash": hash_token(otp),
+            "attempts": 0,
+            "created_at": now,
+            "expires_at": now + timedelta(minutes=10),
+        }
+    )
+    try:
+        await send_verification_email(email, otp)
+    except Exception as exc:
+        if settings.app_env.lower() == "development":
+            response["development_otp"] = otp
+            return response
+        await db.auth_challenges.delete_many(
+            {"user_id": user["user_id"], "purpose": "email_verification"}
+        )
+        raise HTTPException(503, "Email verification service is temporarily unavailable") from exc
+
+    return response
 
 
 @router.post(
@@ -221,12 +289,15 @@ async def verify_login_2fa(
     response: Response,
 ):
     db = get_database()
-    challenge = await db.auth_challenges.find_one(
+    challenge = await db.auth_challenges.find_one_and_update(
         {
             "challenge_id": payload.challenge_id,
             "purpose": "login_2fa",
             "expires_at": {"$gt": _now()},
-        }
+            "attempts": {"$lt": 5},
+        },
+        {"$inc": {"attempts": 1}},
+        return_document=ReturnDocument.AFTER,
     )
     if not challenge:
         raise HTTPException(400, "Invalid or expired two-factor challenge")
@@ -239,13 +310,7 @@ async def verify_login_2fa(
     ):
         raise HTTPException(400, "Two-factor authentication is not configured")
 
-    if challenge.get("attempts", 0) >= 5 or not verify_totp(
-        user["two_factor_secret"], payload.code
-    ):
-        await db.auth_challenges.update_one(
-            {"_id": challenge["_id"]},
-            {"$inc": {"attempts": 1}},
-        )
+    if not verify_totp(user["two_factor_secret"], payload.code):
         raise HTTPException(401, "Invalid two-factor code")
 
     await db.auth_challenges.delete_one({"_id": challenge["_id"]})
@@ -355,12 +420,17 @@ async def refresh(
         raise HTTPException(401, "Refresh session required")
 
     db = get_database()
-    session = await db.sessions.find_one(
+    now = _now()
+    # Rotate the refresh session atomically so concurrent refresh requests
+    # cannot both redeem the same refresh token.
+    session = await db.sessions.find_one_and_update(
         {
             "token_hash": hash_token(token),
             "revoked_at": None,
-            "expires_at": {"$gt": _now()},
-        }
+            "expires_at": {"$gt": now},
+        },
+        {"$set": {"revoked_at": now, "last_used_at": now}},
+        return_document=ReturnDocument.BEFORE,
     )
     if not session:
         raise HTTPException(401, "Invalid or expired refresh session")
@@ -369,11 +439,6 @@ async def refresh(
     if not user:
         raise HTTPException(401, "User session is invalid")
 
-    now = _now()
-    await db.sessions.update_one(
-        {"_id": session["_id"]},
-        {"$set": {"revoked_at": now, "last_used_at": now}},
-    )
     return await _issue_session(db, user, response)
 
 

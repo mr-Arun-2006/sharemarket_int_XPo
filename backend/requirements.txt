@@ -8,6 +8,5 @@ python-multipart==0.0.32
 reportlab==5.0.1
 httpx==0.28.1
 APScheduler==3.11.3
-pytest==9.1.1
 redis==8.1.0
 websockets==17.1

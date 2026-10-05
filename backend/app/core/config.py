@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     auth_cookie_samesite: str = "lax"
     auth_cookie_domain: str = ""
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+
     ai_base_url: str = ""
     ai_api_key: str = ""
     ai_model: str = ""
@@ -74,6 +81,8 @@ class Settings(BaseSettings):
             raise ValueError("LIVE_MAX_CONNECTIONS must be between 1 and 10000")
         if self.live_heartbeat_seconds < 10 or self.live_heartbeat_seconds > 300:
             raise ValueError("LIVE_HEARTBEAT_SECONDS must be between 10 and 300")
+        if self.smtp_port < 1 or self.smtp_port > 65535:
+            raise ValueError("SMTP_PORT must be between 1 and 65535")
         if self.auth_cookie_samesite.lower() not in {"lax", "strict", "none"}:
             raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict, or none")
         if self.app_env.lower() == "production":
@@ -87,8 +96,15 @@ class Settings(BaseSettings):
                 raise ValueError("A valid MongoDB URI is required in production")
             if not self.allowed_host_list:
                 raise ValueError("ALLOWED_HOSTS must contain at least one host in production")
+            if "*" in self.allowed_host_list:
+                raise ValueError("Wildcard ALLOWED_HOSTS is not allowed in production")
             if not self.auth_cookie_secure:
                 raise ValueError("AUTH_COOKIE_SECURE must be true in production")
+            smtp_values = [self.smtp_host, self.smtp_user, self.smtp_password, self.smtp_from]
+            if any(smtp_values) and not all(smtp_values):
+                raise ValueError("SMTP_HOST, SMTP_USER, SMTP_PASSWORD and SMTP_FROM must be configured together")
+            if not all(smtp_values):
+                raise ValueError("SMTP email delivery must be configured in production because email verification is enabled")
             if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
                 raise ValueError("SameSite=None requires a Secure cookie")
 
