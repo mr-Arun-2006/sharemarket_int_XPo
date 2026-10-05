@@ -48,8 +48,11 @@ async def generate_narrative(context: dict) -> dict:
             ),
             follow_redirects=True,
         ) as client:
+            url = settings.ai_base_url.rstrip("/")
+            if not url.endswith("/chat/completions"):
+                url += "/chat/completions"
             response = await client.post(
-                settings.ai_base_url.rstrip("/") + "/chat/completions",
+                url,
                 json=payload,
                 headers={
                     "Authorization": "Bearer " + settings.ai_api_key,
