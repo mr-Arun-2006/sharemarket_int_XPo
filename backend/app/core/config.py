@@ -87,6 +87,8 @@ class Settings(BaseSettings):
                 raise ValueError("A valid MongoDB URI is required in production")
             if not self.allowed_host_list:
                 raise ValueError("ALLOWED_HOSTS must contain at least one host in production")
+            if "*" in self.allowed_host_list:
+                raise ValueError("Wildcard ALLOWED_HOSTS is not allowed in production")
             if not self.auth_cookie_secure:
                 raise ValueError("AUTH_COOKIE_SECURE must be true in production")
             if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
