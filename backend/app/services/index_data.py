@@ -8,6 +8,7 @@ import hashlib
 
 from app.services.remote_ingestion import fetch_source, expand_url
 from app.core.config import settings
+from app.core.config import settings
 from datetime import date, datetime, timezone
 
 
