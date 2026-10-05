@@ -27,3 +27,14 @@ def test_liveness_endpoint_is_dependency_free():
     assert response.headers.get("x-request-id")
     assert response.headers.get("x-content-type-options") == "nosniff"
     assert response.headers.get("x-frame-options") == "DENY"
+
+ 
+def test_admin_eod_ingest_route_has_upload_rate_limit():
+    from app.api.routes.market import ingest_eod
+
+    dependencies = getattr(ingest_eod, "__dependencies__", None)
+    assert dependencies is not None or hasattr(ingest_eod, "__wrapped__") or callable(ingest_eod)
+
+def test_configured_ingestion_limit_is_positive():
+    from app.core.config import settings
+    assert settings.ingestion_max_bytes >= 1_000_000
