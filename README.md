@@ -144,3 +144,27 @@ The market WebSocket requires an authenticated short-lived access token supplied
 Remote market-data downloads enforce `INGESTION_TIMEOUT_SECONDS` and `INGESTION_MAX_BYTES`. The EOD scheduler uses a distributed MongoDB lease that renews during long-running ingestion so multiple backend instances do not start the same job concurrently.
 
 Production logs include a request ID that is returned in the `X-Request-ID` response header, allowing an operational log entry and a user-visible error to be correlated without exposing exception internals.
+
+## Production deployment
+
+Before deployment, set the backend environment to production and provide only deployment-managed secrets.
+
+APP_ENV=production
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAMESITE=none
+DOCS_ENABLED=false
+CORS_ORIGINS=https://<frontend-domain>
+ALLOWED_HOSTS=<api-domain>
+TRUST_PROXY_HEADERS=true
+MONGODB_URI=<managed-mongodb-uri>
+JWT_SECRET=<long-random-secret>
+REDIS_URL=<managed-redis-url>
+AI_BASE_URL=<provider-base-or-chat-completions-url>
+AI_API_KEY=<provider-secret>
+AI_MODEL=<provider-model>
+
+Expose /api/v1/health/live for liveness and /api/v1/health/ready for readiness, with HTTPS at the public edge.
+
+This branch adds database indexes and TTLs, bounded ingestion uploads, bounded AI context, heavy-endpoint rate limits, dependency validation, application import validation, frontend security headers, and regression coverage for stock intelligence.
+
+BSE EOD and optional index/context feeds remain deployment configuration because permitted source access varies by provider.
