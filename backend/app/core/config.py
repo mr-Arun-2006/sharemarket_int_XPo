@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     auth_cookie_samesite: str = "lax"
     auth_cookie_domain: str = ""
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+
     ai_base_url: str = ""
     ai_api_key: str = ""
     ai_model: str = ""
