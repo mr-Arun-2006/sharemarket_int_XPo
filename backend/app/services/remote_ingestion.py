@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from urllib.parse import urlparse
 import hashlib
+import re
 
 import httpx
 
@@ -10,6 +11,12 @@ from app.core.config import settings
 from app.db.mongo import get_database
 from app.services.market_data import build_ingestion_document, parse_exchange_eod
 
+
+def safe_error_message(exc: BaseException, limit: int = 500) -> str:
+    message = str(exc)
+    message = re.sub(r"mongodb(?:\+srv)?://\S+", "[redacted-mongodb-uri]", message, flags=re.IGNORECASE)
+    message = re.sub(r"https?://\S+", "[redacted-url]", message, flags=re.IGNORECASE)
+    return message[:limit]
 
 def expand_url(template: str, day: date) -> str:
     values = {
