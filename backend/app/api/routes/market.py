@@ -17,13 +17,21 @@ async def _latest_trade_date(db, exchange):
     return row.get("trade_date") if row else None
 
 @router.post("/eod/ingest", dependencies=[rate_limit("market.eod_ingest", 3, 300)])
+async def _read_limited_upload(file: UploadFile) -> bytes:
+    data = await file.read(settings.ingestion_max_bytes + 1)
+    if len(data) > settings.ingestion_max_bytes:
+        raise HTTPException(
+            413,
+            f"Uploaded EOD file exceeds INGESTION_MAX_BYTES ({settings.ingestion_max_bytes} bytes)",
+        )
+    return data
+
+
 async def ingest_eod(exchange: str, file: UploadFile = File(...), current_user: dict = Depends(require_permission("admin.data.manage"))):
     exchange=exchange.upper()
     if exchange not in {"NSE","BSE"}: raise HTTPException(400,"exchange must be NSE or BSE")
-    data=await file.read(settings.ingestion_max_bytes + 1)
+    data=await _read_limited_upload(file)
     if not data: raise HTTPException(400,"Uploaded EOD file is empty")
-    if len(data) > settings.ingestion_max_bytes:
-        raise HTTPException(413, f"Uploaded EOD file exceeds INGESTION_MAX_BYTES ({settings.ingestion_max_bytes} bytes)")
     try: records=parse_exchange_eod(data,exchange,file.filename or "eod.csv")
     except ValueError as exc: raise HTTPException(400,str(exc)) from exc
     if not records: raise HTTPException(400,"No valid EOD rows were found")
