@@ -25,11 +25,12 @@ async def mongo_lifespan() -> AsyncIterator[AsyncMongoClient]:
     from app.services.live_provider import live_provider
     from app.services.live_market import process_live_tick
 
-    live_hub.attach_broker(redis_live_broker)
     try:
+        # Establish the database contract before starting background workers.
+        await _ensure_indexes()
+        live_hub.attach_broker(redis_live_broker)
         await redis_live_broker.start(live_hub.publish_local)
         await live_provider.start(process_live_tick)
-        await _ensure_indexes()
         start_scheduler()
         yield _client
     finally:
