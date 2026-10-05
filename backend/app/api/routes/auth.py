@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import secrets
 
+from pymongo import ReturnDocument
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 from pymongo.errors import DuplicateKeyError
 
@@ -139,12 +140,15 @@ async def register(payload: RegisterRequest):
 async def verify(payload: VerifyRequest):
     db = get_database()
     email = str(payload.email).lower()
-    challenge = await db.auth_challenges.find_one(
+    challenge = await db.auth_challenges.find_one_and_update(
         {
             "email": email,
             "purpose": "email_verification",
             "expires_at": {"$gt": _now()},
-        }
+            "attempts": {"$lt": 5},
+        },
+        {"$inc": {"attempts": 1}},
+        return_document=ReturnDocument.AFTER,
     )
     if not challenge or not secrets.compare_digest(
         hash_token(payload.otp), challenge["otp_hash"]
@@ -221,12 +225,15 @@ async def verify_login_2fa(
     response: Response,
 ):
     db = get_database()
-    challenge = await db.auth_challenges.find_one(
+    challenge = await db.auth_challenges.find_one_and_update(
         {
             "challenge_id": payload.challenge_id,
             "purpose": "login_2fa",
             "expires_at": {"$gt": _now()},
-        }
+            "attempts": {"$lt": 5},
+        },
+        {"$inc": {"attempts": 1}},
+        return_document=ReturnDocument.AFTER,
     )
     if not challenge:
         raise HTTPException(400, "Invalid or expired two-factor challenge")
@@ -239,13 +246,7 @@ async def verify_login_2fa(
     ):
         raise HTTPException(400, "Two-factor authentication is not configured")
 
-    if challenge.get("attempts", 0) >= 5 or not verify_totp(
-        user["two_factor_secret"], payload.code
-    ):
-        await db.auth_challenges.update_one(
-            {"_id": challenge["_id"]},
-            {"$inc": {"attempts": 1}},
-        )
+    if not verify_totp(user["two_factor_secret"], payload.code):
         raise HTTPException(401, "Invalid two-factor code")
 
     await db.auth_challenges.delete_one({"_id": challenge["_id"]})
@@ -355,12 +356,17 @@ async def refresh(
         raise HTTPException(401, "Refresh session required")
 
     db = get_database()
-    session = await db.sessions.find_one(
+    now = _now()
+    # Rotate the refresh session atomically so concurrent refresh requests
+    # cannot both redeem the same refresh token.
+    session = await db.sessions.find_one_and_update(
         {
             "token_hash": hash_token(token),
             "revoked_at": None,
-            "expires_at": {"$gt": _now()},
-        }
+            "expires_at": {"$gt": now},
+        },
+        {"$set": {"revoked_at": now, "last_used_at": now}},
+        return_document=ReturnDocument.BEFORE,
     )
     if not session:
         raise HTTPException(401, "Invalid or expired refresh session")
@@ -369,11 +375,6 @@ async def refresh(
     if not user:
         raise HTTPException(401, "User session is invalid")
 
-    now = _now()
-    await db.sessions.update_one(
-        {"_id": session["_id"]},
-        {"$set": {"revoked_at": now, "last_used_at": now}},
-    )
     return await _issue_session(db, user, response)
 
 
