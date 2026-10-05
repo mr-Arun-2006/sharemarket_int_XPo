@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps.auth import get_current_user, require_permission
+from app.api.deps.rate_limit import rate_limit
 from app.db.mongo import get_database
 from app.services.ai_provider import generate_narrative
 from app.services.eod_engine import build_market_summary
@@ -31,7 +32,7 @@ async def _load_eod_records(db, limit: int = 30000) -> list[EODRecord]:
     return rows
 
 
-@router.post("/eod")
+@router.post("/eod", dependencies=[rate_limit("intelligence.eod", 10, 300)])
 async def generate_eod_intelligence(
     symbol: str | None = Query(default=None, max_length=32),
     language: str = Query(default="en", pattern="^(en|ta|hi|gu|kn)$"),
@@ -51,7 +52,7 @@ async def generate_eod_intelligence(
     try:
         summary = build_market_summary(records)
         context = await build_market_context(summary.trade_date)
-        diagnosis = build_ai_diagnosis(summary, records, language=language, symbol=symbol, context=context)
+        diagnosis = await build_ai_diagnosis(summary, records, language=language, symbol=symbol, context=context)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -140,7 +141,7 @@ async def get_analysis(analysis_id: str, current_user: dict = Depends(get_curren
     return row
 
 
-@router.get("/{analysis_id}/compare-latest")
+@router.get("/{analysis_id}/compare-latest", dependencies=[rate_limit("intelligence.compare", 20, 300)])
 async def compare_historical_analysis(analysis_id: str, current_user: dict = Depends(require_permission("reports.read"))):
     db = get_database()
     original = await db.analyses.find_one(
@@ -162,7 +163,7 @@ async def compare_historical_analysis(analysis_id: str, current_user: dict = Dep
     try:
         summary = build_market_summary(records)
         context = await build_market_context(summary.trade_date)
-        latest = build_ai_diagnosis(
+        latest = await build_ai_diagnosis(
             summary, records, language=original.get("language", "en"), symbol=symbol, context=context
         )
     except ValueError as exc:
