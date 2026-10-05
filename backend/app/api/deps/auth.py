@@ -46,6 +46,17 @@ async def get_current_user(
     return await get_user_from_access_token(credentials.credentials)
 
 
+async def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    if credentials is None:
+        return None
+    try:
+        return await get_user_from_access_token(credentials.credentials)
+    except HTTPException:
+        return None
+
+
 def require_permission(permission: str):
     async def dependency(current_user: dict = Depends(get_current_user)):
         if current_user.get("role") == "admin":
