@@ -13,7 +13,7 @@ async def health():
     return {
         "status": "ok",
         "service": "sharem-int-xpo-api",
-        "version": "1.1.0",
+        "version": "1.2.0",
     }
 
 
