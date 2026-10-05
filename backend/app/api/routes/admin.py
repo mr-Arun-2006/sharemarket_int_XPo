@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field
 
 from app.api.deps.auth import require_permission
@@ -35,7 +36,10 @@ async def create_role(payload: RoleCreateRequest, current_user: dict = Depends(r
         "permissions": sorted(set(payload.permissions)),
         "system": False,
     }
-    await db.roles.insert_one(role)
+    try:
+        await db.roles.insert_one(role)
+    except DuplicateKeyError as exc:
+        raise HTTPException(409, "Role already exists") from exc
     await record_audit("admin.role_created", user_id=current_user["user_id"], target_type="role", target_id=payload.name)
     return role
 
