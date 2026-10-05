@@ -128,10 +128,7 @@ async def register(payload: RegisterRequest):
     )
     try:
         await send_verification_email(email, otp)
-    except Exception:
-        await db.auth_challenges.delete_many(
-            {"user_id": user_id, "purpose": "email_verification"}
-        )
+    except Exception as exc:
         await record_audit(
             "auth.verification_email_failed",
             user_id=user_id,
@@ -139,7 +136,10 @@ async def register(payload: RegisterRequest):
             target_id=user_id,
         )
         if settings.app_env.lower() == "production":
-            raise HTTPException(503, "Email verification service is temporarily unavailable")
+            await db.auth_challenges.delete_many(
+                {"user_id": user_id, "purpose": "email_verification"}
+            )
+            raise HTTPException(503, "Email verification service is temporarily unavailable") from exc
 
     await record_audit(
         "auth.register",
@@ -224,12 +224,12 @@ async def resend_verification(payload: EmailRequest):
     try:
         await send_verification_email(email, otp)
     except Exception as exc:
-        await db.auth_challenges.delete_many(
-            {"user_id": user["user_id"], "purpose": "email_verification"}
-        )
         if settings.app_env.lower() == "development":
             response["development_otp"] = otp
             return response
+        await db.auth_challenges.delete_many(
+            {"user_id": user["user_id"], "purpose": "email_verification"}
+        )
         raise HTTPException(503, "Email verification service is temporarily unavailable") from exc
 
     return response
