@@ -29,12 +29,22 @@ def test_liveness_endpoint_is_dependency_free():
     assert response.headers.get("x-frame-options") == "DENY"
 
  
-def test_admin_eod_ingest_route_has_upload_rate_limit():
-    from app.api.routes.market import ingest_eod
-
-    dependencies = getattr(ingest_eod, "__dependencies__", None)
-    assert dependencies is not None or hasattr(ingest_eod, "__wrapped__") or callable(ingest_eod)
-
-def test_configured_ingestion_limit_is_positive():
+ 
+def test_oversized_eod_upload_is_rejected():
+    import asyncio
+    from fastapi import HTTPException
+    from app.api.routes.market import _read_limited_upload
     from app.core.config import settings
-    assert settings.ingestion_max_bytes >= 1_000_000
+
+    class FakeUpload:
+        async def read(self, size=-1):
+            return b"x" * (settings.ingestion_max_bytes + 1)
+
+    async def run():
+        try:
+            await _read_limited_upload(FakeUpload())
+        except HTTPException as exc:
+            return exc.status_code
+        return None
+
+    assert asyncio.run(run()) == 413
