@@ -1,6 +1,6 @@
 fastapi==0.117.1
 uvicorn[standard]==0.54.0
-pydantic==2.12.0
+pydantic==2.13.5
 pydantic-settings==2.15.0
 pymongo==4.18.2
 email-validator==2.3.0
