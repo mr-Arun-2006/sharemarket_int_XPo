@@ -74,6 +74,25 @@ async def _run_scheduled_ingestion() -> dict:
         await _record_failure("institutional_activity", "NSE", institutional_day, "https://www.nseindia.com/api/fiidiiTradeReact", str(exc))
         results.append({"dataset": "institutional_activity", "status": "failed", "error": str(exc)})
 
+    for exchange, template in (
+        ("NSE", settings.nse_index_url_template),
+        ("BSE", settings.bse_index_url_template),
+    ):
+        if not template:
+            results.append({"dataset": "index_data", "exchange": exchange, "status": "not_configured"})
+            continue
+        try:
+            results.append(await ingest_remote_index(template, exchange, institutional_day))
+        except Exception as exc:
+            logger.exception("%s index ingestion failed", exchange)
+            await _record_failure("index_data", exchange, institutional_day, template, str(exc))
+            results.append({
+                "dataset": "index_data",
+                "exchange": exchange,
+                "status": "failed",
+                "error": str(exc),
+            })
+
     context_sources = [
         ("event", settings.nse_events_url_template),
         ("sector", settings.sector_mapping_url_template),
