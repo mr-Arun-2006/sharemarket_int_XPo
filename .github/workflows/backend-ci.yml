@@ -59,6 +59,8 @@ jobs:
         run: pytest -q
       - name: Compile backend
         run: python -m compileall -q backend/app
+      - name: Build backend production image
+        run: docker build --tag sharem-int-xpo-backend:ci backend
 
   frontend:
     runs-on: ubuntu-latest
