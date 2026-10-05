@@ -46,6 +46,7 @@ async def _ensure_indexes() -> None:
 
     await db.user.create_index("user_id", unique=True, name="user_id_unique")
     await db.user.create_index("email_normalized", unique=True, name="user_email_unique")
+    await db.roles.create_index("name", unique=True, name="role_name_unique")
 
     await db.sessions.create_index("session_id", unique=True, name="session_id_unique")
     await db.sessions.create_index("token_hash", unique=True, name="session_token_hash_unique")
