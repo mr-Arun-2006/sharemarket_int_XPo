@@ -74,6 +74,8 @@ class Settings(BaseSettings):
             raise ValueError("LIVE_MAX_CONNECTIONS must be between 1 and 10000")
         if self.live_heartbeat_seconds < 10 or self.live_heartbeat_seconds > 300:
             raise ValueError("LIVE_HEARTBEAT_SECONDS must be between 10 and 300")
+        if self.smtp_port < 1 or self.smtp_port > 65535:
+            raise ValueError("SMTP_PORT must be between 1 and 65535")
         if self.auth_cookie_samesite.lower() not in {"lax", "strict", "none"}:
             raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict, or none")
         if self.app_env.lower() == "production":
