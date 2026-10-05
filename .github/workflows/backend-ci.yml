@@ -50,6 +50,12 @@ jobs:
           CORS_ORIGINS: https://frontend.example.com
           ALLOWED_HOSTS: api.example.com
           DOCS_ENABLED: "false"
+          SMTP_HOST: smtp.example.com
+          SMTP_PORT: "587"
+          SMTP_USER: ci-user
+          SMTP_PASSWORD: ci-password
+          SMTP_FROM: ci@example.com
+          SMTP_USE_TLS: "true"
         run: python -c "from app.main import app; print(app.title, app.version)"
       - name: Import application
         working-directory: backend
