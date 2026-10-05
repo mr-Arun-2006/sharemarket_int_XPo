@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable, Mapping
 from app.schemas.market import EODRecord
+from app.core.config import settings
+from app.core.config import settings
 
 class MarketDataParseError(ValueError): pass
 def _clean_key(v:str)->str: return re.sub(r"[^a-z0-9]","",v.strip().lower())
@@ -55,7 +57,12 @@ def parse_exchange_eod(data:bytes,exchange:str,filename:str="")->list[EODRecord]
             names=[n for n in z.namelist() if n.lower().endswith((".csv",".txt"))]
             if not names: raise MarketDataParseError("ZIP contains no CSV/TXT data file")
             source_file=max(names,key=lambda n:z.getinfo(n).file_size)
+            info = z.getinfo(source_file)
+            if info.file_size > settings.ingestion_max_bytes:
+                raise MarketDataParseError("ZIP entry exceeds INGESTION_MAX_BYTES")
             data=z.read(source_file)
+            if len(data) > settings.ingestion_max_bytes:
+                raise MarketDataParseError("Decompressed ZIP entry exceeds INGESTION_MAX_BYTES")
     aliases=NSE_ALIASES if exchange.upper()=="NSE" else BSE_ALIASES
     result=[]
     for row in _read_csv(data):

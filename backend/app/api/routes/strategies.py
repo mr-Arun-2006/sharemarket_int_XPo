@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps.auth import get_current_user, require_permission
+from app.api.deps.rate_limit import rate_limit
 from app.db.mongo import get_database
 from app.services.audit import record_audit
 from app.services.backtest import run_sma_crossover
@@ -55,7 +56,7 @@ async def delete_strategy(strategy_id:str,current_user:dict=Depends(require_perm
     return {"status":"deleted","strategy_id":strategy_id}
 
 
-@router.post("/backtest")
+@router.post("/backtest", dependencies=[rate_limit("strategies.backtest", 10, 300)])
 async def run_backtest(payload:BacktestRequest,current_user:dict=Depends(require_permission("strategies.manage"))):
     try:
         result=await run_sma_crossover(

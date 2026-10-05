@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import secrets
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
+from pymongo.errors import DuplicateKeyError
 
 from app.core.security import (
     create_access_token,
@@ -94,20 +95,23 @@ async def register(payload: RegisterRequest):
     user_id = secrets.token_hex(16)
     otp = f"{secrets.randbelow(1_000_000):06d}"
     now = _now()
-    await db.user.insert_one(
-        {
-            "user_id": user_id,
-            "email": email,
-            "email_normalized": email,
-            "password_hash": hash_password(payload.password),
-            "role": "user",
-            "ai_language": "en",
-            "email_verified": False,
-            "two_factor_enabled": False,
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
+    try:
+        await db.user.insert_one(
+            {
+                "user_id": user_id,
+                "email": email,
+                "email_normalized": email,
+                "password_hash": hash_password(payload.password),
+                "role": "user",
+                "ai_language": "en",
+                "email_verified": False,
+                "two_factor_enabled": False,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    except DuplicateKeyError as exc:
+        raise HTTPException(409, "Account already exists") from exc
     await db.auth_challenges.insert_one(
         {
             "user_id": user_id,

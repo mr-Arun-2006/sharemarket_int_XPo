@@ -4,9 +4,12 @@ import csv
 import io
 import re
 import zipfile
+import hashlib
 
 from app.services.remote_ingestion import fetch_source, expand_url
-from datetime import date
+from app.core.config import settings
+from app.core.config import settings
+from datetime import date, datetime, timezone
 
 
 def _key(value: str) -> str:
@@ -60,7 +63,13 @@ def parse_index_file(data: bytes) -> list[dict]:
             names = [n for n in archive.namelist() if n.lower().endswith((".csv", ".txt"))]
             if not names:
                 raise ValueError("Index ZIP contains no CSV/TXT file")
-            data = archive.read(max(names, key=lambda n: archive.getinfo(n).file_size))
+            source_name = max(names, key=lambda n: archive.getinfo(n).file_size)
+            info = archive.getinfo(source_name)
+            if info.file_size > settings.ingestion_max_bytes:
+                raise ValueError("ZIP entry exceeds INGESTION_MAX_BYTES")
+            data = archive.read(source_name)
+            if len(data) > settings.ingestion_max_bytes:
+                raise ValueError("Decompressed ZIP entry exceeds INGESTION_MAX_BYTES")
 
     text = data.decode("utf-8-sig", errors="replace")
     try:
@@ -88,33 +97,92 @@ def parse_index_file(data: bytes) -> list[dict]:
 
 
 async def ingest_remote_index(url_template: str, exchange: str, target_day: date | None = None) -> dict:
+    exchange = exchange.upper()
+    if exchange not in {"NSE", "BSE"}:
+        raise ValueError("exchange must be NSE or BSE")
     if not url_template.strip():
         raise ValueError(f"{exchange} index source URL template is not configured")
-    day = target_day or date.today()
-    url = expand_url(url_template, day)
-    data, meta = await fetch_source(url)
-    rows = parse_index_file(data)
-    if not rows:
-        raise ValueError("Index source returned no parseable rows")
-    unique_dates = {row["trade_date"] for row in rows}
-    if len(unique_dates) != 1:
-        raise ValueError(f"Index source contains multiple trade dates: {sorted(unique_dates)}")
+
+    requested_day = target_day or datetime.now(timezone.utc).date()
+    last_error: Exception | None = None
+    rows: list[dict] = []
+    meta: dict = {}
+    trade_date: str | None = None
+
+    for offset in range(8):
+        candidate = requested_day.fromordinal(requested_day.toordinal() - offset)
+        url = expand_url(url_template, candidate)
+        try:
+            data, candidate_meta = await fetch_source(url)
+            parsed = parse_index_file(data)
+            if not parsed:
+                raise ValueError("Index source returned no parseable rows")
+            unique_dates = {row["trade_date"] for row in parsed}
+            if unique_dates != {candidate.isoformat()}:
+                raise ValueError(
+                    f"Index source date mismatch: expected {candidate.isoformat()}, got {sorted(unique_dates)}"
+                )
+            rows = parsed
+            meta = candidate_meta
+            trade_date = candidate.isoformat()
+            break
+        except Exception as exc:
+            last_error = exc
+
+    if not rows or trade_date is None:
+        raise ValueError(
+            f"{exchange} index source unavailable for recent trading-day window: {last_error}"
+        )
 
     from app.db.mongo import get_database
     db = get_database()
-    trade_date = rows[0]["trade_date"]
     digest = meta["sha256"]
     existing = await db.index_data.find_one(
         {"exchange": exchange, "trade_date": trade_date, "sha256": digest},
         {"_id": 0, "ingestion_id": 1},
     )
     if existing:
-        return {"status": "already_ingested", "ingestion_id": existing["ingestion_id"], "trade_date": trade_date}
+        return {
+            "status": "already_ingested",
+            "ingestion_id": existing["ingestion_id"],
+            "trade_date": trade_date,
+        }
 
     ingestion_id = f"{exchange.lower()}-index-{trade_date}-{digest[:12]}"
-    docs = [{**row, "exchange": exchange, "sha256": digest, "ingestion_id": ingestion_id, "source_url": meta["url"]} for row in rows]
+    now = datetime.now(timezone.utc)
+    docs = [
+        {
+            **row,
+            "exchange": exchange,
+            "sha256": digest,
+            "ingestion_id": ingestion_id,
+            "source_url": meta["url"],
+            "ingested_at": now,
+        }
+        for row in rows
+    ]
     await db.index_data.delete_many({"exchange": exchange, "trade_date": trade_date})
     await db.index_data.insert_many(docs, ordered=False)
+    await db.ingestion_runs.update_one(
+        {
+            "dataset": "index_data",
+            "exchange": exchange,
+            "trade_date": trade_date,
+            "sha256": digest,
+        },
+        {
+            "$set": {
+                "ingestion_id": ingestion_id,
+                "source": meta["url"],
+                "sha256": digest,
+                "bytes": meta["bytes"],
+                "records_seen": len(docs),
+                "status": "complete",
+                "fetched_at": now,
+            }
+        },
+        upsert=True,
+    )
     return {
         "status": "complete",
         "ingestion_id": ingestion_id,
@@ -122,4 +190,5 @@ async def ingest_remote_index(url_template: str, exchange: str, target_day: date
         "trade_date": trade_date,
         "records_seen": len(docs),
         "source_url": meta["url"],
+        "sha256": digest,
     }

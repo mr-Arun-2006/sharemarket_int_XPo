@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from app.api.deps.auth import require_permission
+from app.api.deps.rate_limit import rate_limit
 from app.db.mongo import get_database
 from app.services.report_pdf import build_report_pdf
 
@@ -20,7 +21,7 @@ def _title(analysis: dict) -> str:
     return "NSE EOD Market Intelligence Report"
 
 
-@router.post("/from-analysis/{analysis_id}", status_code=201)
+@router.post("/from-analysis/{analysis_id}", status_code=201, dependencies=[rate_limit("reports.create", 20, 300)])
 async def create_report(
     analysis_id: str,
     current_user: dict = Depends(require_permission("reports.read")),
@@ -82,7 +83,7 @@ async def get_report(
     return row
 
 
-@router.get("/{report_id}/pdf")
+@router.get("/{report_id}/pdf", dependencies=[rate_limit("reports.pdf", 10, 300)])
 async def download_report_pdf(
     report_id: str,
     current_user: dict = Depends(require_permission("reports.read")),

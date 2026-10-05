@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field
 
 from app.api.deps.auth import require_permission
+from app.api.deps.rate_limit import rate_limit
 from app.db.mongo import get_database
 from app.services.audit import record_audit
 
@@ -34,7 +36,10 @@ async def create_role(payload: RoleCreateRequest, current_user: dict = Depends(r
         "permissions": sorted(set(payload.permissions)),
         "system": False,
     }
-    await db.roles.insert_one(role)
+    try:
+        await db.roles.insert_one(role)
+    except DuplicateKeyError as exc:
+        raise HTTPException(409, "Role already exists") from exc
     await record_audit("admin.role_created", user_id=current_user["user_id"], target_type="role", target_id=payload.name)
     return role
 
@@ -103,7 +108,7 @@ async def data_pipeline_status(current_user: dict = Depends(require_permission("
     }
 
 
-@router.post("/data-pipeline/run")
+@router.post("/data-pipeline/run", dependencies=[rate_limit("admin.pipeline", 3, 300)])
 async def run_data_pipeline(current_user: dict = Depends(require_permission("admin.data.manage"))):
     from app.services.scheduler import run_scheduled_ingestion
     result = await run_scheduled_ingestion()

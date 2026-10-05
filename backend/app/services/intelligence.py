@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from statistics import mean
 from typing import Any
 
 from app.services.eod_engine import EODMarketSummary
@@ -34,7 +33,7 @@ def _translation_prefix(language: str) -> str:
     return "Market evidence is explained in English; financial terminology is kept in English."
 
 
-def build_ai_diagnosis(
+async def build_ai_diagnosis(
     summary: EODMarketSummary,
     records: list[EODRecord],
     language: str = "en",
@@ -131,7 +130,8 @@ def build_ai_diagnosis(
         technical = compute_technical_snapshot(matches)
         latest = matches[-1]
         selected_change = _stock_change(latest)
-        # Fundamental data is source-backed and may be missing for the selected symbol.\n        fundamentals = await get_fundamental_snapshot(symbol_upper, latest.trade_date)
+        # Fundamental data is source-backed and may be missing for the selected symbol.
+        fundamentals = await get_fundamental_snapshot(symbol_upper, latest.trade_date)
         stock_evidence = [
             {
                 "id": "EV-STOCK-LATEST",

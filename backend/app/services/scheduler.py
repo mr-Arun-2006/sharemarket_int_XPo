@@ -12,7 +12,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from app.core.config import settings
-from app.services.remote_ingestion import ingest_remote_eod, ingest_nse_eod_from_portal
+from app.services.remote_ingestion import ingest_remote_eod, ingest_nse_eod_from_portal, safe_error_message
 from app.services.index_data import ingest_remote_index
 from app.services.remote_context import ingest_remote_context, ingest_nse_institutional
 
@@ -47,9 +47,9 @@ async def _run_scheduled_ingestion() -> dict:
             "NSE",
             today,
             "https://www.nseindia.com/all-reports",
-            str(exc),
+            safe_error_message(exc),
         )
-        results.append({"exchange": "NSE", "status": "failed", "error": str(exc)})
+        results.append({"exchange": "NSE", "status": "failed", "error": safe_error_message(exc)})
 
     # BSE remains configuration-driven because its official EOD distribution access is account-dependent.
     if not settings.bse_eod_url_template:
@@ -59,8 +59,8 @@ async def _run_scheduled_ingestion() -> dict:
             results.append(await ingest_remote_eod("BSE", settings.bse_eod_url_template, today))
         except Exception as exc:
             logger.exception("BSE EOD ingestion failed")
-            await _record_failure("eod_market_data", "BSE", today, settings.bse_eod_url_template, str(exc))
-            results.append({"exchange": "BSE", "status": "failed", "error": str(exc)})
+            await _record_failure("eod_market_data", "BSE", today, settings.bse_eod_url_template, safe_error_message(exc))
+            results.append({"exchange": "BSE", "status": "failed", "error": safe_error_message(exc)})
     # FII/FPI + DII uses the official NSE JSON endpoint and is not date-template based.
     institutional_day = today
     for item in reversed(results):
@@ -71,8 +71,27 @@ async def _run_scheduled_ingestion() -> dict:
         results.append(await ingest_nse_institutional(institutional_day))
     except Exception as exc:
         logger.exception("NSE institutional ingestion failed")
-        await _record_failure("institutional_activity", "NSE", institutional_day, "https://www.nseindia.com/api/fiidiiTradeReact", str(exc))
-        results.append({"dataset": "institutional_activity", "status": "failed", "error": str(exc)})
+        await _record_failure("institutional_activity", "NSE", institutional_day, "https://www.nseindia.com/api/fiidiiTradeReact", safe_error_message(exc))
+        results.append({"dataset": "institutional_activity", "status": "failed", "error": safe_error_message(exc)})
+
+    for exchange, template in (
+        ("NSE", settings.nse_index_url_template),
+        ("BSE", settings.bse_index_url_template),
+    ):
+        if not template:
+            results.append({"dataset": "index_data", "exchange": exchange, "status": "not_configured"})
+            continue
+        try:
+            results.append(await ingest_remote_index(template, exchange, institutional_day))
+        except Exception as exc:
+            logger.exception("%s index ingestion failed", exchange)
+            await _record_failure("index_data", exchange, institutional_day, template, safe_error_message(exc))
+            results.append({
+                "dataset": "index_data",
+                "exchange": exchange,
+                "status": "failed",
+                "error": safe_error_message(exc),
+            })
 
     context_sources = [
         ("event", settings.nse_events_url_template),
@@ -86,8 +105,8 @@ async def _run_scheduled_ingestion() -> dict:
             results.append(await ingest_remote_context(kind, template, institutional_day))
         except Exception as exc:
             logger.exception("%s context ingestion failed", kind)
-            await _record_failure(kind, "NSE", institutional_day, template, str(exc))
-            results.append({"dataset": kind, "status": "failed", "error": str(exc)})
+            await _record_failure(kind, "NSE", institutional_day, template, safe_error_message(exc))
+            results.append({"dataset": kind, "status": "failed", "error": safe_error_message(exc)})
     return {"trade_date": today.isoformat(), "results": results}
 
 

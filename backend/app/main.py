@@ -32,7 +32,10 @@ logger = logging.getLogger("sharem.api")
 
 app = FastAPI(
     title="ShareM Int Xpo API",
-    version="1.1.0",
+    version="1.2.0",
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
     lifespan=mongo_lifespan,
 )
 
@@ -98,10 +101,7 @@ async def unhandled_exception(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "Internal server error",
-            "request_id": request_id,
-        },
+        content={"detail": "Internal server error", "request_id": request_id},
         headers={"X-Request-ID": request_id},
     )
 
@@ -111,10 +111,7 @@ async def validation_exception(request: Request, exc: RequestValidationError):
     request_id = getattr(request.state, "request_id", uuid4().hex)
     return JSONResponse(
         status_code=422,
-        content={
-            "detail": "Request validation failed",
-            "request_id": request_id,
-        },
+        content={"detail": "Request validation failed", "request_id": request_id},
         headers={"X-Request-ID": request_id},
     )
 
@@ -143,13 +140,7 @@ async def security_headers(request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault(
-        "Permissions-Policy",
-        "camera=(), microphone=(), geolocation=()",
-    )
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     if settings.app_env.lower() == "production":
-        response.headers.setdefault(
-            "Strict-Transport-Security",
-            "max-age=31536000; includeSubDomains",
-        )
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
