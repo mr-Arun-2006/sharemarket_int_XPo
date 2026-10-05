@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from typing import Iterable, Mapping
 from app.schemas.market import EODRecord
 from app.core.config import settings
-from app.core.config import settings
 
 class MarketDataParseError(ValueError): pass
 def _clean_key(v:str)->str: return re.sub(r"[^a-z0-9]","",v.strip().lower())
