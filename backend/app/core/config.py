@@ -91,6 +91,11 @@ class Settings(BaseSettings):
                 raise ValueError("Wildcard ALLOWED_HOSTS is not allowed in production")
             if not self.auth_cookie_secure:
                 raise ValueError("AUTH_COOKIE_SECURE must be true in production")
+            smtp_values = [self.smtp_host, self.smtp_user, self.smtp_password, self.smtp_from]
+            if any(smtp_values) and not all(smtp_values):
+                raise ValueError("SMTP_HOST, SMTP_USER, SMTP_PASSWORD and SMTP_FROM must be configured together")
+            if not all(smtp_values):
+                raise ValueError("SMTP email delivery must be configured in production because email verification is enabled")
             if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
                 raise ValueError("SameSite=None requires a Secure cookie")
 
