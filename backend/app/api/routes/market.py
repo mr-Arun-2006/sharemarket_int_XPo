@@ -3,6 +3,8 @@ from __future__ import annotations
 from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from app.api.deps.auth import require_permission
+from app.api.deps.rate_limit import rate_limit
+from app.core.config import settings
 from app.db.mongo import get_database
 from app.services.market_data import build_ingestion_document, parse_exchange_eod
 
@@ -16,7 +18,6 @@ async def _latest_trade_date(db, exchange):
     row=await db.eod_market_data.find_one({"exchange":exchange},{"_id":0,"trade_date":1},sort=[("trade_date",-1)])
     return row.get("trade_date") if row else None
 
-@router.post("/eod/ingest", dependencies=[rate_limit("market.eod_ingest", 3, 300)])
 async def _read_limited_upload(file: UploadFile) -> bytes:
     data = await file.read(settings.ingestion_max_bytes + 1)
     if len(data) > settings.ingestion_max_bytes:
@@ -27,6 +28,7 @@ async def _read_limited_upload(file: UploadFile) -> bytes:
     return data
 
 
+@router.post("/eod/ingest", dependencies=[rate_limit("market.eod_ingest", 3, 300)])
 async def ingest_eod(exchange: str, file: UploadFile = File(...), current_user: dict = Depends(require_permission("admin.data.manage"))):
     exchange=exchange.upper()
     if exchange not in {"NSE","BSE"}: raise HTTPException(400,"exchange must be NSE or BSE")
