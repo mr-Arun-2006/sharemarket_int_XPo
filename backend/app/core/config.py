@@ -13,9 +13,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
     allowed_hosts: str = "localhost,127.0.0.1"
+    docs_enabled: bool = True
+    trust_proxy_headers: bool = False
 
-    # Refresh-token cookie controls. In cross-site deployments such as
-    # Vercel frontend + Render API, production should use None + Secure.
     auth_cookie_name: str = "sharem_refresh"
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = ""
     ai_timeout_seconds: int = 30
+    ai_max_context_chars: int = 24000
     redis_url: str = ""
     report_font_path: str = ""
     data_scheduler_enabled: bool = True
@@ -63,6 +64,8 @@ class Settings(BaseSettings):
             raise ValueError("REFRESH_TOKEN_DAYS must be between 1 and 90")
         if self.ai_timeout_seconds < 1 or self.ai_timeout_seconds > 120:
             raise ValueError("AI_TIMEOUT_SECONDS must be between 1 and 120")
+        if self.ai_max_context_chars < 2000 or self.ai_max_context_chars > 100_000:
+            raise ValueError("AI_MAX_CONTEXT_CHARS must be between 2000 and 100000")
         if self.ingestion_timeout_seconds < 5 or self.ingestion_timeout_seconds > 180:
             raise ValueError("INGESTION_TIMEOUT_SECONDS must be between 5 and 180")
         if self.ingestion_max_bytes < 1_000_000 or self.ingestion_max_bytes > 250_000_000:
@@ -78,6 +81,8 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
             if "*" in self.cors_origin_list:
                 raise ValueError("Wildcard CORS is not allowed in production")
+            if not self.cors_origin_list:
+                raise ValueError("CORS_ORIGINS must contain at least one origin in production")
             if not self.mongodb_uri.startswith(("mongodb://", "mongodb+srv://")):
                 raise ValueError("A valid MongoDB URI is required in production")
             if not self.allowed_host_list:
