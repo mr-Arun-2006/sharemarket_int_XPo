@@ -24,10 +24,12 @@ from app.schemas.auth import (
     TwoFactorCodeRequest,
     TwoFactorVerifyRequest,
     VerifyRequest,
+    EmailRequest,
 )
 from app.api.deps.auth import get_current_user
 from app.api.deps.rate_limit import rate_limit
 from app.services.audit import record_audit
+from app.services.email_delivery import send_verification_email
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -124,6 +126,21 @@ async def register(payload: RegisterRequest):
             "expires_at": now + timedelta(minutes=10),
         }
     )
+    try:
+        await send_verification_email(email, otp)
+    except Exception:
+        await db.auth_challenges.delete_many(
+            {"user_id": user_id, "purpose": "email_verification"}
+        )
+        await record_audit(
+            "auth.verification_email_failed",
+            user_id=user_id,
+            target_type="user",
+            target_id=user_id,
+        )
+        if settings.app_env.lower() == "production":
+            raise HTTPException(503, "Email verification service is temporarily unavailable")
+
     await record_audit(
         "auth.register",
         user_id=user_id,
@@ -169,6 +186,53 @@ async def verify(payload: VerifyRequest):
         target_id=challenge["user_id"],
     )
     return {"status": "verified"}
+
+
+@router.post(
+    "/resend-verification",
+    dependencies=[rate_limit("auth.resend_verification", 3, 900)],
+)
+async def resend_verification(payload: EmailRequest):
+    db = get_database()
+    email = str(payload.email).lower()
+    user = await db.user.find_one(
+        {"email_normalized": email},
+        {"_id": 0, "user_id": 1, "email_verified": 1},
+    )
+
+    # Return the same response for unknown addresses to avoid account enumeration.
+    response = {"status": "verification_sent"}
+    if not user or user.get("email_verified"):
+        return response
+
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+    now = _now()
+    await db.auth_challenges.delete_many(
+        {"user_id": user["user_id"], "purpose": "email_verification"}
+    )
+    await db.auth_challenges.insert_one(
+        {
+            "user_id": user["user_id"],
+            "email": email,
+            "purpose": "email_verification",
+            "otp_hash": hash_token(otp),
+            "attempts": 0,
+            "created_at": now,
+            "expires_at": now + timedelta(minutes=10),
+        }
+    )
+    try:
+        await send_verification_email(email, otp)
+    except Exception as exc:
+        await db.auth_challenges.delete_many(
+            {"user_id": user["user_id"], "purpose": "email_verification"}
+        )
+        if settings.app_env.lower() == "development":
+            response["development_otp"] = otp
+            return response
+        raise HTTPException(503, "Email verification service is temporarily unavailable") from exc
+
+    return response
 
 
 @router.post(
