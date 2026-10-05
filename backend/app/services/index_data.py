@@ -7,6 +7,7 @@ import zipfile
 import hashlib
 
 from app.services.remote_ingestion import fetch_source, expand_url
+from app.core.config import settings
 from datetime import date, datetime, timezone
 
 
@@ -61,7 +62,13 @@ def parse_index_file(data: bytes) -> list[dict]:
             names = [n for n in archive.namelist() if n.lower().endswith((".csv", ".txt"))]
             if not names:
                 raise ValueError("Index ZIP contains no CSV/TXT file")
-            data = archive.read(max(names, key=lambda n: archive.getinfo(n).file_size))
+            source_name = max(names, key=lambda n: archive.getinfo(n).file_size)
+            info = archive.getinfo(source_name)
+            if info.file_size > settings.ingestion_max_bytes:
+                raise ValueError("ZIP entry exceeds INGESTION_MAX_BYTES")
+            data = archive.read(source_name)
+            if len(data) > settings.ingestion_max_bytes:
+                raise ValueError("Decompressed ZIP entry exceeds INGESTION_MAX_BYTES")
 
     text = data.decode("utf-8-sig", errors="replace")
     try:
