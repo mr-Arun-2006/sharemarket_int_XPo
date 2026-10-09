@@ -203,3 +203,15 @@ def test_shared_rate_limit_helper_rejects_requests_over_limit(monkeypatch):
         assert "Retry-After" in error.value.headers
 
     asyncio.run(exercise_limit())
+
+
+def test_custom_role_wildcard_does_not_grant_implicit_permissions():
+    from app.api.deps.auth import _role_has_permission
+
+    assert not _role_has_permission({"permissions": ["*"]}, "admin.users.manage")
+    assert not _role_has_permission({"permissions": ["*"]}, "portfolio.read")
+    assert _role_has_permission(
+        {"permissions": ["portfolio.read"]},
+        "portfolio.read",
+    )
+    assert not _role_has_permission(None, "portfolio.read")
