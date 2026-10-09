@@ -95,3 +95,22 @@ The repository should not be considered production-ready solely from these contr
 ## Status
 
 **Preliminary result: Not yet certified production-ready.** This review identified concrete hardening changes and additional release gates. Completion of this document does not mean the system has been penetration-tested or deployed.
+
+
+## Additional finding discovered during implementation
+
+### P1 — RBAC endpoints could permit privilege escalation
+**Evidence:** The role-management endpoints accepted permission lists, and the user-role endpoint could assign the reserved `admin` role to an actor who merely held the `admin.users.manage` permission. A delegated role manager could also create a role with wildcard or administrative permissions and potentially have it assigned.
+
+**Branch remediation:** Non-admin actors are now blocked from creating/updating roles with wildcard or `admin.*` permissions and cannot assign the reserved admin role or any role containing administrative permissions. The actual `admin` role retains its intended management behavior. Regression tests were added for these checks.
+
+## Branch remediation status
+
+The audit branch now includes the following configuration/RBAC hardening:
+- Production startup rejects enabled API documentation.
+- Production startup rejects common placeholder JWT secret strings.
+- Production CORS origins must use HTTPS.
+- Non-admin RBAC actors cannot grant wildcard/admin permissions or assign privileged roles.
+- Regression tests cover these controls.
+
+These changes are committed on `security/production-readiness-audit`; they are not a substitute for completed CI, staging, or penetration testing.
