@@ -151,3 +151,55 @@ def test_admin_can_grant_privileged_permissions():
     admin = {"role": "admin"}
     _assert_permissions_safe(["*"], admin)
     _assert_role_assignable({"name": "admin", "permissions": ["*"]}, admin)
+
+
+def test_shared_rate_limit_helper_rejects_requests_over_limit(monkeypatch):
+    import asyncio
+    import importlib
+    from fastapi import HTTPException
+
+    rate_limit_module = importlib.import_module("app.api.deps.rate_limit")
+
+    class FakeRateLimitCollection:
+        def __init__(self):
+            self.rows = {}
+
+        async def find_one_and_update(
+            self,
+            query,
+            update,
+            upsert,
+            return_document,
+            projection,
+        ):
+            key = query["key"]
+            row = self.rows.setdefault(key, {"count": 0})
+            row["count"] += update["$inc"]["count"]
+            return {"count": row["count"]}
+
+    class FakeDatabase:
+        def __init__(self):
+            self.rate_limits = FakeRateLimitCollection()
+
+    database = FakeDatabase()
+    monkeypatch.setattr(rate_limit_module, "get_database", lambda: database)
+
+    async def exercise_limit():
+        for _ in range(10):
+            await rate_limit_module.enforce_rate_limit(
+                "test.login",
+                "opaque-account-id",
+                10,
+                900,
+            )
+        with pytest.raises(HTTPException) as error:
+            await rate_limit_module.enforce_rate_limit(
+                "test.login",
+                "opaque-account-id",
+                10,
+                900,
+            )
+        assert error.value.status_code == 429
+        assert "Retry-After" in error.value.headers
+
+    asyncio.run(exercise_limit())
