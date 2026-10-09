@@ -111,6 +111,7 @@ The audit branch now includes the following configuration/RBAC hardening:
 - Production startup rejects common placeholder JWT secret strings.
 - Production CORS origins must use HTTPS.
 - Non-admin RBAC actors cannot grant wildcard/admin permissions or assign privileged roles.
-- Regression tests cover these controls.
+- Failed login attempts are additionally rate-limited by a keyed HMAC of the normalized email, in addition to the existing per-IP limit; raw email addresses are not stored in rate-limit keys.
+- Regression tests cover production configuration, RBAC protections, and rate-limit threshold behavior.
 
 These changes are committed on `security/production-readiness-audit`; they are not a substitute for completed CI, staging, or penetration testing.
