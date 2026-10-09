@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
 import secrets
 
 from pymongo import ReturnDocument
@@ -27,7 +29,7 @@ from app.schemas.auth import (
     EmailRequest,
 )
 from app.api.deps.auth import get_current_user
-from app.api.deps.rate_limit import rate_limit
+from app.api.deps.rate_limit import enforce_rate_limit, rate_limit
 from app.services.audit import record_audit
 from app.services.email_delivery import send_verification_email
 
@@ -245,6 +247,20 @@ async def login(payload: LoginRequest, response: Response):
     email = str(payload.email).lower()
     user = await db.user.find_one({"email_normalized": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
+        # Add a per-account failure bucket so distributed attempts against one
+        # account cannot bypass the existing per-IP limit. HMAC prevents raw
+        # email addresses from being stored in the rate-limit collection.
+        account_key = hmac.new(
+            settings.jwt_secret.encode(),
+            email.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        await enforce_rate_limit(
+            "auth.login.account_failure",
+            f"email:{account_key}",
+            10,
+            900,
+        )
         raise HTTPException(401, "Invalid email or password")
     if not user.get("email_verified"):
         raise HTTPException(403, "Email verification required")
