@@ -20,6 +20,22 @@ class RolePermissionsUpdate(BaseModel):
 class UserRoleUpdate(BaseModel):
     role: str = Field(min_length=2, max_length=40)
 
+def _assert_permissions_safe(permissions: list[str], current_user: dict) -> None:
+    """Only the actual admin role may grant administrative or wildcard permissions."""
+    if current_user.get("role") == "admin":
+        return
+    if any(permission == "*" or permission.startswith("admin.") for permission in permissions):
+        raise HTTPException(403, "Only an administrator can grant administrative permissions")
+
+
+def _assert_role_assignable(role: dict, current_user: dict) -> None:
+    if current_user.get("role") == "admin":
+        return
+    if role.get("name") == "admin":
+        raise HTTPException(403, "Only an administrator can assign the admin role")
+    _assert_permissions_safe(role.get("permissions", []), current_user)
+
+
 @router.get("/roles")
 async def list_roles(_: dict = Depends(require_permission("admin.roles.manage"))):
     roles = await get_database().roles.find({}, {"_id": 0}).sort("name", 1).to_list(length=200)
@@ -30,6 +46,7 @@ async def create_role(payload: RoleCreateRequest, current_user: dict = Depends(r
     db = get_database()
     if await db.roles.find_one({"name": payload.name}):
         raise HTTPException(409, "Role already exists")
+    _assert_permissions_safe(payload.permissions, current_user)
     role = {
         "name": payload.name,
         "description": payload.description,
@@ -51,6 +68,7 @@ async def update_role_permissions(role_name: str, payload: RolePermissionsUpdate
         raise HTTPException(404, "Role not found")
     if role.get("system") and role_name == "admin":
         raise HTTPException(400, "The admin role cannot be customized here")
+    _assert_permissions_safe(payload.permissions, current_user)
     await db.roles.update_one({"name": role_name}, {"$set": {"permissions": sorted(set(payload.permissions))}})
     await record_audit("admin.role_permissions_updated", user_id=current_user["user_id"], target_type="role", target_id=role_name)
     return {"status": "updated", "role": role_name, "permissions": sorted(set(payload.permissions))}
@@ -69,6 +87,7 @@ async def update_user_role(user_id: str, payload: UserRoleUpdate, current_user: 
     role = await db.roles.find_one({"name": payload.role})
     if not role:
         raise HTTPException(404, "Role not found")
+    _assert_role_assignable(role, current_user)
     user = await db.user.find_one({"user_id": user_id})
     if not user:
         raise HTTPException(404, "User not found")

@@ -57,14 +57,19 @@ async def get_optional_current_user(
         return None
 
 
+def _role_has_permission(role: dict | None, permission: str) -> bool:
+    """Custom roles receive only explicitly assigned permissions; wildcard is reserved."""
+    permissions = set(role.get("permissions", [])) if role else set()
+    return permission in permissions
+
+
 def require_permission(permission: str):
     async def dependency(current_user: dict = Depends(get_current_user)):
         if current_user.get("role") == "admin":
             return current_user
 
         role = await get_database().roles.find_one({"name": current_user.get("role")})
-        permissions = set(role.get("permissions", [])) if role else set()
-        if "*" not in permissions and permission not in permissions:
+        if not _role_has_permission(role, permission):
             raise HTTPException(403, "Permission denied")
         return current_user
 

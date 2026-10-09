@@ -88,10 +88,18 @@ class Settings(BaseSettings):
         if self.app_env.lower() == "production":
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
+            normalized_secret = self.jwt_secret.strip().lower()
+            placeholder_fragments = ("replace-with", "change-me", "your-secret", "example-secret", "placeholder")
+            if any(fragment in normalized_secret for fragment in placeholder_fragments):
+                raise ValueError("JWT_SECRET must be a unique random production secret, not a placeholder")
+            if self.docs_enabled:
+                raise ValueError("DOCS_ENABLED must be false in production")
             if "*" in self.cors_origin_list:
                 raise ValueError("Wildcard CORS is not allowed in production")
             if not self.cors_origin_list:
                 raise ValueError("CORS_ORIGINS must contain at least one origin in production")
+            if any(not origin.startswith("https://") for origin in self.cors_origin_list):
+                raise ValueError("Production CORS_ORIGINS must use HTTPS")
             if not self.mongodb_uri.startswith(("mongodb://", "mongodb+srv://")):
                 raise ValueError("A valid MongoDB URI is required in production")
             if not self.allowed_host_list:
