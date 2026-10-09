@@ -26,19 +26,19 @@ The repository should not be considered production-ready solely from these contr
 
 **Fix:** Production startup now rejects common placeholder strings in addition to enforcing minimum length. Use a cryptographically random secret from a managed secret store.
 
-### P1 — Authentication throttling is primarily client-IP scoped
-**Evidence:** `backend/app/api/deps/rate_limit.py` keys limits by scope, client IP, and time window. Login uses this limiter.
+### P1 — Account abuse controls still need broader verification
+**Evidence:** The existing shared rate limiter keys IP-scoped counters by scope, client IP, and time window. The security branch additionally applies a separate HMAC-keyed counter to repeated failed logins by normalized email.
 
-**Risk:** Distributed attempts against one account may evade per-IP limits. If proxy trust is enabled without a trusted-edge guarantee, spoofed forwarding headers can also undermine client-IP identification.
+**Risk:** The per-account failure threshold reduces distributed password-guessing opportunities without storing raw email addresses in rate-limit keys. Verification/resend flows still need account-aware abuse controls, and proxy trust can be undermined if forwarding headers are not sanitized by the trusted edge.
 
-**Recommendation:** Add account-identifier throttling for login and verification flows, progressive delay/temporary lockout with safe recovery, and only enable `TRUST_PROXY_HEADERS` behind a known reverse proxy that overwrites forwarding headers.
+**Recommendation:** Test the new failed-login throttling under concurrency and multi-instance deployment. Add verification-flow abuse controls and enable `TRUST_PROXY_HEADERS` only behind a known reverse proxy that overwrites forwarding headers.
 
-### P1 — No verified current CI/test result in this audit
-**Evidence:** Repository documentation describes CI checks, but a current successful workflow run and full runtime test suite were not verified during this review.
+### P1 — CI success is not a complete production security assessment
+**Evidence:** Earlier revisions of this branch passed backend tests, frontend type-check/build, dependency review, and Python/JavaScript CodeQL. The latest revision includes additional account-throttling and RBAC changes, so its own CI must pass before merge.
 
-**Risk:** Static inspection cannot prove correct behavior under malformed requests, database outages, concurrency, or deployment configuration.
+**Risk:** CI cannot prove safe behavior under all malformed requests, database outages, high concurrency, real proxy configurations, or production deployment settings.
 
-**Recommendation:** Run CI and security checks on the proposed branch; add regression tests for production settings and auth failure cases.
+**Recommendation:** Wait for CI on the final PR revision and run focused staging checks for authentication, RBAC, and failure scenarios. Treat automated static analysis as one layer, not a penetration test.
 
 ### P2 — Runtime configuration needs deployment-specific review
 **Evidence:** CORS, host validation, cookie settings, proxy trust, Redis, SMTP, and external providers are environment-configured.
@@ -102,7 +102,7 @@ The repository should not be considered production-ready solely from these contr
 ### P1 — RBAC endpoints could permit privilege escalation
 **Evidence:** The role-management endpoints accepted permission lists, and the user-role endpoint could assign the reserved `admin` role to an actor who merely held the `admin.users.manage` permission. A delegated role manager could also create a role with wildcard or administrative permissions and potentially have it assigned.
 
-**Branch remediation:** Non-admin actors are now blocked from creating/updating roles with wildcard or `admin.*` permissions and cannot assign the reserved admin role or any role containing administrative permissions. The actual `admin` role retains its intended management behavior. Regression tests were added for these checks.
+**Branch remediation:** Non-admin actors are blocked from creating/updating roles with wildcard or `admin.*` permissions and cannot assign the reserved admin role or any role containing administrative permissions. Authorization for custom roles now requires an explicitly assigned permission; a pre-existing `*` permission no longer grants implicit access. The actual `admin` role retains its intended management behavior. Regression tests were added for these checks.
 
 ## Branch remediation status
 
@@ -111,7 +111,8 @@ The audit branch now includes the following configuration/RBAC hardening:
 - Production startup rejects common placeholder JWT secret strings.
 - Production CORS origins must use HTTPS.
 - Non-admin RBAC actors cannot grant wildcard/admin permissions or assign privileged roles.
-- Failed login attempts are additionally rate-limited by a keyed HMAC of the normalized email, in addition to the existing per-IP limit; raw email addresses are not stored in rate-limit keys.
-- Regression tests cover production configuration, RBAC protections, and rate-limit threshold behavior.
+- Custom roles require explicit permissions; a wildcard entry does not silently grant every permission.
+- Repeated failed logins are additionally rate-limited by a keyed HMAC of the normalized email, alongside the existing per-IP limit; raw email addresses are not stored in rate-limit keys.
+- Regression tests cover production configuration, RBAC protections, explicit custom-role permissions, and rate-limit threshold behavior.
 
 These changes are committed on `security/production-readiness-audit`; they are not a substitute for completed CI, staging, or penetration testing.
