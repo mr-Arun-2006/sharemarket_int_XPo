@@ -66,6 +66,7 @@ def test_production_config_rejects_wildcard_hosts():
         jwt_secret="x" * 48,
         cors_origins="https://frontend.example.com",
         allowed_hosts="*",
+        docs_enabled=False,
         auth_cookie_secure=True,
         auth_cookie_samesite="lax",
         smtp_host="smtp.example.com",
@@ -75,3 +76,142 @@ def test_production_config_rejects_wildcard_hosts():
     )
     with pytest.raises(ValueError, match="Wildcard ALLOWED_HOSTS"):
         cfg.validate_runtime()
+
+
+def _valid_production_settings(**overrides):
+    from app.core.config import Settings
+
+    values = {
+        "app_env": "production",
+        "mongodb_uri": "mongodb://localhost:27017/test",
+        "jwt_secret": "a" * 48,
+        "cors_origins": "https://frontend.example.com",
+        "allowed_hosts": "api.example.com",
+        "docs_enabled": False,
+        "auth_cookie_secure": True,
+        "auth_cookie_samesite": "lax",
+        "smtp_host": "smtp.example.com",
+        "smtp_user": "user",
+        "smtp_password": "password",
+        "smtp_from": "ci@example.com",
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+def test_production_config_rejects_enabled_api_docs():
+    cfg = _valid_production_settings(docs_enabled=True)
+    with pytest.raises(ValueError, match="DOCS_ENABLED must be false"):
+        cfg.validate_runtime()
+
+
+def test_production_config_rejects_placeholder_jwt_secret():
+    cfg = _valid_production_settings(
+        jwt_secret="replace-with-a-real-but-not-random-secret-12345"
+    )
+    with pytest.raises(ValueError, match="not a placeholder"):
+        cfg.validate_runtime()
+
+
+def test_production_config_requires_https_cors_origins():
+    cfg = _valid_production_settings(cors_origins="http://frontend.example.com")
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        cfg.validate_runtime()
+
+
+def test_non_admin_cannot_grant_wildcard_or_admin_permissions():
+    from fastapi import HTTPException
+    from app.api.routes.admin import _assert_permissions_safe
+
+    actor = {"role": "role_manager"}
+    for permissions in (["*"], ["admin.users.manage"], ["admin.roles.manage"]):
+        with pytest.raises(HTTPException) as error:
+            _assert_permissions_safe(permissions, actor)
+        assert error.value.status_code == 403
+
+
+def test_non_admin_cannot_assign_privileged_roles():
+    from fastapi import HTTPException
+    from app.api.routes.admin import _assert_role_assignable
+
+    actor = {"role": "user_manager"}
+    for role in (
+        {"name": "admin", "permissions": ["*"]},
+        {"name": "supervisor", "permissions": ["admin.users.manage"]},
+    ):
+        with pytest.raises(HTTPException) as error:
+            _assert_role_assignable(role, actor)
+        assert error.value.status_code == 403
+
+
+def test_admin_can_grant_privileged_permissions():
+    from app.api.routes.admin import _assert_permissions_safe
+    from app.api.routes.admin import _assert_role_assignable
+
+    admin = {"role": "admin"}
+    _assert_permissions_safe(["*"], admin)
+    _assert_role_assignable({"name": "admin", "permissions": ["*"]}, admin)
+
+
+def test_shared_rate_limit_helper_rejects_requests_over_limit(monkeypatch):
+    import asyncio
+    import importlib
+    from fastapi import HTTPException
+
+    rate_limit_module = importlib.import_module("app.api.deps.rate_limit")
+
+    class FakeRateLimitCollection:
+        def __init__(self):
+            self.rows = {}
+
+        async def find_one_and_update(
+            self,
+            query,
+            update,
+            upsert,
+            return_document,
+            projection,
+        ):
+            key = query["key"]
+            row = self.rows.setdefault(key, {"count": 0})
+            row["count"] += update["$inc"]["count"]
+            return {"count": row["count"]}
+
+    class FakeDatabase:
+        def __init__(self):
+            self.rate_limits = FakeRateLimitCollection()
+
+    database = FakeDatabase()
+    monkeypatch.setattr(rate_limit_module, "get_database", lambda: database)
+
+    async def exercise_limit():
+        for _ in range(10):
+            await rate_limit_module.enforce_rate_limit(
+                "test.login",
+                "opaque-account-id",
+                10,
+                900,
+            )
+        with pytest.raises(HTTPException) as error:
+            await rate_limit_module.enforce_rate_limit(
+                "test.login",
+                "opaque-account-id",
+                10,
+                900,
+            )
+        assert error.value.status_code == 429
+        assert "Retry-After" in error.value.headers
+
+    asyncio.run(exercise_limit())
+
+
+def test_custom_role_wildcard_does_not_grant_implicit_permissions():
+    from app.api.deps.auth import _role_has_permission
+
+    assert not _role_has_permission({"permissions": ["*"]}, "admin.users.manage")
+    assert not _role_has_permission({"permissions": ["*"]}, "portfolio.read")
+    assert _role_has_permission(
+        {"permissions": ["portfolio.read"]},
+        "portfolio.read",
+    )
+    assert not _role_has_permission(None, "portfolio.read")

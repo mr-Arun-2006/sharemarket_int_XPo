@@ -145,6 +145,10 @@ Remote market-data downloads enforce `INGESTION_TIMEOUT_SECONDS` and `INGESTION_
 
 Production logs include a request ID that is returned in the `X-Request-ID` response header, allowing an operational log entry and a user-visible error to be correlated without exposing exception internals.
 
+## Security audit
+
+See [Production Readiness & Security Audit](docs/PRODUCTION_SECURITY_AUDIT.md) for reviewed controls, findings, and the release checklist. This is a static review, not a penetration test or production certification.
+
 ## Production deployment
 
 Before deployment, set the backend environment to production and provide only deployment-managed secrets.
