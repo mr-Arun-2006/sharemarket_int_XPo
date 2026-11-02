@@ -21,12 +21,8 @@ class Settings(BaseSettings):
     auth_cookie_samesite: str = "lax"
     auth_cookie_domain: str = ""
 
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from: str = ""
-    smtp_use_tls: bool = True
+    firebase_project_id: str = ""
+    firebase_service_account_json_base64: str = ""
 
     ai_base_url: str = ""
     ai_api_key: str = ""
@@ -90,10 +86,6 @@ class Settings(BaseSettings):
             raise ValueError("LIVE_PROVIDER_TYPE must be generic or upstox_v3")
         if self.upstox_mode not in {"ltpc", "full", "full_d30"}:
             raise ValueError("UPSTOX_MODE must be ltpc, full or full_d30")
-        if self.smtp_port < 1 or self.smtp_port > 65535:
-            raise ValueError("SMTP_PORT must be between 1 and 65535")
-        if self.auth_cookie_samesite.lower() not in {"lax", "strict", "none"}:
-            raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict or none")
         if self.app_env.lower() == "production":
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
@@ -117,11 +109,10 @@ class Settings(BaseSettings):
                 raise ValueError("Wildcard ALLOWED_HOSTS is not allowed in production")
             if not self.auth_cookie_secure:
                 raise ValueError("AUTH_COOKIE_SECURE must be true in production")
-            smtp_values = [self.smtp_host, self.smtp_user, self.smtp_password, self.smtp_from]
-            if any(smtp_values) and not all(smtp_values):
-                raise ValueError("SMTP_HOST, SMTP_USER, SMTP_PASSWORD and SMTP_FROM must be configured together")
-            if not all(smtp_values):
-                raise ValueError("SMTP email delivery must be configured in production because email verification is enabled")
+            if not self.firebase_project_id.strip():
+                raise ValueError("FIREBASE_PROJECT_ID is required in production")
+            if not self.firebase_service_account_json_base64.strip():
+                raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 is required in production")
             if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
                 raise ValueError("SameSite=None requires a Secure cookie")
 
