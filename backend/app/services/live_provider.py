@@ -103,14 +103,16 @@ def _extract_upstox_ltpc(feed_payload: bytes) -> tuple[dict[str, Any] | None, fl
             for full_number, full_wire, full_value in _iter_protobuf_fields(value):
                 if full_wire != 2 or full_number not in (1, 2):
                     continue
+                full_ltpc = None
+                full_volume = None
                 for item_number, item_wire, item_value in _iter_protobuf_fields(full_value):
                     if item_number == 1 and item_wire == 2:
-                        ltpc = _parse_ltpc(item_value)
+                        full_ltpc = _parse_ltpc(item_value)
                     elif item_number == 6 and item_wire == 0:
                         # MarketFullFeed.vtt is total traded volume; index feeds omit it.
-                        volume_traded = float(item_value)
-                if "ltpc" in locals():
-                    return ltpc, volume_traded
+                        full_volume = float(item_value)
+                if full_ltpc is not None:
+                    return full_ltpc, full_volume
 
     return None, volume_traded
 
