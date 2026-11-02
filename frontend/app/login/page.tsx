@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, setAccessToken } from "../../lib/api";
+import { exchangeFirebaseSession, signInWithFirebase } from "../../lib/firebase-auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,25 +17,23 @@ export default function LoginPage() {
     setLoading(true);
     setMessage("");
     try {
-      const result = await apiFetch<{
-        status: string;
-        access_token?: string;
-        challenge_id?: string;
-        requires_2fa?: boolean;
-      }>("/api/v1/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
+      const emailVerified = await signInWithFirebase(email, password);
+      if (!emailVerified) {
+        setMessage("Your email is not verified yet. Complete the verification step.");
+        router.push("/verify");
+        return;
+      }
 
+      const result = await exchangeFirebaseSession();
       if (result.requires_2fa && result.challenge_id) {
         sessionStorage.setItem("sharem_2fa_challenge", result.challenge_id);
         router.push("/2fa");
         return;
       }
-
       if (result.access_token) {
-        setAccessToken(result.access_token);
         router.push("/dashboard");
+      } else {
+        throw new Error("The backend did not create an application session.");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Login failed");
@@ -51,7 +49,7 @@ export default function LoginPage() {
         <Link className="button" href="/">Back</Link>
       </nav>
       <section className="card" style={{ maxWidth: 520, margin: "40px auto" }}>
-        <div className="eyebrow">Authentication</div>
+        <div className="eyebrow">Firebase Authentication</div>
         <h2>Sign in</h2>
         <p className="muted">Access your market workspace.</p>
         <form onSubmit={submit}>
@@ -67,7 +65,7 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
-            minLength={8}
+            minLength={6}
             placeholder="Password"
             autoComplete="current-password"
             required
