@@ -5,6 +5,7 @@ import json
 import logging
 import struct
 from typing import Any, Awaitable, Callable
+from uuid import uuid4
 
 from app.core.config import settings
 
@@ -305,7 +306,7 @@ class LiveProvider:
                         raise ValueError("Upstox authorization response has no WebSocket URL")
 
                 subscription = {
-                    "guid": "sharem-int-xpo",
+                    "guid": str(uuid4()),
                     "method": "sub",
                     "data": {
                         "mode": settings.upstox_mode,
