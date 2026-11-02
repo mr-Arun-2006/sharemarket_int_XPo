@@ -63,8 +63,7 @@ function formatPercent(value: number | null | undefined): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function EODCard({ item }: { item: EODExchange | undefined }) {
-  const exchange = item?.exchange ?? "NSE";
+function EODCard({ item, exchange }: { item: EODExchange | undefined; exchange: "NSE" | "BSE" }) {
   const available = Boolean(item && item.records > 0 && item.trade_date);
 
   return (
@@ -282,8 +281,8 @@ export default function DashboardPage() {
         </div>
         {eodError && <div className="error">{eodError}</div>}
         <div className="metric-grid">
-          <EODCard item={nseEod} />
-          <EODCard item={bseEod} />
+          <EODCard item={nseEod} exchange="NSE" />
+          <EODCard item={bseEod} exchange="BSE" />
         </div>
         <div className="caption" style={{ marginTop: 12 }}>
           EOD figures are used for market breadth, regime classification,
