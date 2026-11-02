@@ -76,6 +76,7 @@ def test_upstox_v3_protobuf_decodes_index_ltp_and_change():
     assert ticks[0]["symbol"] == "NIFTY 50"
     assert ticks[0]["price"] == 22500.5
     assert ticks[0]["previous_close"] == 22400.0
+    assert ticks[0]["volume"] is None
     assert round(ticks[0]["change_pct"], 4) == round((100.5 / 22400) * 100, 4)
 
 
