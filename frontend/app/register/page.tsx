@@ -58,7 +58,7 @@ export default function RegisterPage() {
             onChange={(e) => setPassword(e.target.value)}
             type="password"
             autoComplete="new-password"
-            minLength={6}
+            minLength={8}
             required
             style={{ width: "100%", padding: 12, margin: "8px 0 16px", background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10 }}
           />
@@ -68,7 +68,7 @@ export default function RegisterPage() {
             onChange={(e) => setConfirmPassword(e.target.value)}
             type="password"
             autoComplete="new-password"
-            minLength={6}
+            minLength={8}
             required
             style={{ width: "100%", padding: 12, margin: "8px 0 16px", background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10 }}
           />
