@@ -55,6 +55,8 @@ type Tick = {
 type LiveProviderStatus = {
   provider_configured: boolean;
   provider_running: boolean;
+  provider_connected: boolean;
+  provider_type: string;
   status: string;
 };
 
@@ -247,11 +249,13 @@ export default function DashboardPage() {
 
   const providerLabel = !providerStatus
     ? "Provider status unavailable"
-    : providerStatus.provider_running
-      ? "Market-data provider connected"
-      : providerStatus.provider_configured
-        ? "Provider configured · waiting for connection"
-        : "Provider not configured";
+    : providerStatus.provider_connected
+      ? `${providerStatus.provider_type} feed connected`
+      : providerStatus.provider_running
+        ? "Provider worker active · reconnecting"
+        : providerStatus.provider_configured
+          ? "Provider configured · worker not running"
+          : "Provider not configured";
 
   return (
     <AppShell>
