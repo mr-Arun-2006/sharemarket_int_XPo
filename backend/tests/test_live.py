@@ -96,3 +96,26 @@ def test_upstox_v3_protobuf_uses_symbol_map_for_equities():
     assert ticks[0]["symbol"] == "RELIANCE"
     assert ticks[0]["price"] == 1410.25
     assert ticks[0]["previous_close"] == 1395.0
+
+
+
+def test_upstox_v3_full_market_feed_extracts_session_volume():
+    ltpc = _double(1, 1410.25) + _double(4, 1395.0)
+    market_full_feed = (
+        _length_delimited(1, ltpc)
+        + _integer(6, 123456)
+    )
+    full_feed = _length_delimited(1, market_full_feed)
+    feed = _length_delimited(2, full_feed)
+    key = "NSE_EQ|INE002A01018"
+    map_entry = _length_delimited(1, key.encode()) + _length_delimited(2, feed)
+    message = _length_delimited(2, map_entry)
+
+    ticks = decode_upstox_v3_message(
+        message,
+        {key: {"exchange": "NSE", "symbol": "RELIANCE"}},
+    )
+
+    assert len(ticks) == 1
+    assert ticks[0]["price"] == 1410.25
+    assert ticks[0]["volume"] == 123456.0
