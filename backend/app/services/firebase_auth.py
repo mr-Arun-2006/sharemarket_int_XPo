@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from functools import lru_cache
+from datetime import datetime, timezone
 from typing import Any
 
 import firebase_admin
@@ -42,7 +42,12 @@ def _initialize_firebase_app():
         )
 
     try:
-        return firebase_admin.get_app()
+        app = firebase_admin.get_app()
+        if app.project_id != project_id:
+            raise FirebaseAuthConfigurationError(
+                "An initialized Firebase Admin app uses a different project"
+            )
+        return app
     except ValueError:
         try:
             credential = credentials.Certificate(service_account_info)
@@ -50,6 +55,8 @@ def _initialize_firebase_app():
                 credential,
                 options={"projectId": project_id},
             )
+        except FirebaseAuthConfigurationError:
+            raise
         except Exception as exc:
             raise FirebaseAuthConfigurationError(
                 "Firebase Admin could not initialize; check the service account credentials"
@@ -75,7 +82,7 @@ async def sync_firebase_user(db, claims: dict[str, Any]) -> dict[str, Any]:
     if not uid or not email or claims.get("email_verified") is not True:
         raise ValueError("Firebase token must contain a UID and a verified email")
 
-    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    now = datetime.now(timezone.utc)
     users = db.user
     user = await users.find_one({"firebase_uid": uid})
     if user is None:
