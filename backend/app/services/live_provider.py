@@ -67,7 +67,7 @@ def _parse_ltpc(payload: bytes) -> dict[str, float | int | None]:
         "price": None,
         "previous_close": None,
         "last_trade_time": None,
-        "volume": None,
+        "last_trade_quantity": None,
     }
     for number, wire_type, value in _iter_protobuf_fields(payload):
         if number == 1 and wire_type == 1:
@@ -75,7 +75,7 @@ def _parse_ltpc(payload: bytes) -> dict[str, float | int | None]:
         elif number == 2 and wire_type == 0:
             values["last_trade_time"] = int(value)
         elif number == 3 and wire_type == 0:
-            values["volume"] = int(value)
+            values["last_trade_quantity"] = int(value)
         elif number == 4 and wire_type == 1:
             values["previous_close"] = struct.unpack("<d", value)[0]
     return values
@@ -173,7 +173,7 @@ def decode_upstox_v3_message(
                 "price": price,
                 "previous_close": previous_close,
                 "change_pct": change_pct,
-                "volume": volume if volume is not None else ltpc.get("volume"),
+                "volume": volume,
             }
         )
 
