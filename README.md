@@ -130,8 +130,7 @@ Firebase Authentication is the identity provider for frontend registration, emai
 The frontend uses Firebase Authentication's HTTPS REST API. Enable **Email/Password** in Firebase Authentication > Sign-in method, configure the email verification template, and add the frontend Vercel domain under Authentication > Settings > Authorized domains.
 
 Frontend environment:
-- `NEXT_PUBLIC_FIREBASE_API_KEY` — Firebase web API key (public browser configuration).
-- `NEXT_PUBLIC_FIREBASE_PROJECT_ID` — Firebase project ID.
+- `NEXT_PUBLIC_FIREBASE_API_KEY` — Firebase web API key (public browser configuration). The Firebase project is identified by this API key; the project ID is a backend-only setting.
 - `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_WS_BASE_URL` — the backend's HTTPS and WSS origins.
 
 Backend secrets:
