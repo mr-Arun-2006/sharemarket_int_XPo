@@ -61,37 +61,39 @@ type LiveProviderStatus = {
 };
 
 function formatPercent(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "--";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 function EODCard({ item, exchange }: { item: EODExchange | undefined; exchange: "NSE" | "BSE" }) {
-  const available = Boolean(item && item.records > 0 && item.trade_date);
+  const availableItem =
+    item && item.records > 0 && item.trade_date ? item : null;
+  const available = availableItem !== null;
 
   return (
     <article className="panel">
       <div className="section-title">
         <div>
           <div className="eyebrow">{exchange} · End of day</div>
-          <h2>{available ? item.trade_date : "No EOD dataset"}</h2>
+          <h2>{availableItem ? availableItem.trade_date : "No EOD dataset"}</h2>
         </div>
         <span className="caption">{available ? "Stored EOD" : "Unavailable"}</span>
       </div>
-      <div className="metric">{available ? item.records.toLocaleString() : "--"}</div>
+      <div className="metric">{availableItem ? availableItem.records.toLocaleString() : "--"}</div>
       <div className="caption">Securities in latest session</div>
       <div className="stats-row">
-        <span>Advancers: {available ? item.positive : "--"}</span>
-        <span>Decliners: {available ? item.negative : "--"}</span>
-        <span>Unchanged: {available ? item.unchanged : "--"}</span>
-        <span>Breadth: {available ? formatPercent(item.breadth_pct) : "--"}</span>
+        <span>Advancers: {availableItem ? availableItem.positive : "--"}</span>
+        <span>Decliners: {availableItem ? availableItem.negative : "--"}</span>
+        <span>Unchanged: {availableItem ? availableItem.unchanged : "--"}</span>
+        <span>Breadth: {availableItem ? formatPercent(availableItem.breadth_pct) : "--"}</span>
       </div>
-      {available && item.fetched_at && (
+      {availableItem?.fetched_at && (
         <p className="caption">
-          Ingested {new Date(item.fetched_at).toLocaleString()}
+          Ingested {new Date(availableItem.fetched_at).toLocaleString()}
         </p>
       )}
-      {available && item.source && (
-        <p className="caption">Source: {item.source}</p>
+      {availableItem?.source && (
+        <p className="caption">Source: {availableItem.source}</p>
       )}
       {!available && (
         <p className="muted">
