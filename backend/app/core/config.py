@@ -47,10 +47,15 @@ class Settings(BaseSettings):
     nse_events_url_template: str = ""
     sector_mapping_url_template: str = ""
 
+    live_provider_type: str = "generic"
     live_provider_url: str = ""
     live_provider_api_key: str = ""
-    live_ingest_api_key: str = ""
     live_provider_subscribe_json: str = ""
+    upstox_access_token: str = ""
+    upstox_instrument_keys: str = ""
+    upstox_symbol_map_json: str = "{}"
+    upstox_mode: str = "ltpc"
+    live_ingest_api_key: str = ""
     live_max_connections: int = 100
     live_heartbeat_seconds: int = 30
 
@@ -81,10 +86,14 @@ class Settings(BaseSettings):
             raise ValueError("LIVE_MAX_CONNECTIONS must be between 1 and 10000")
         if self.live_heartbeat_seconds < 10 or self.live_heartbeat_seconds > 300:
             raise ValueError("LIVE_HEARTBEAT_SECONDS must be between 10 and 300")
+        if self.live_provider_type.lower() not in {"generic", "upstox_v3"}:
+            raise ValueError("LIVE_PROVIDER_TYPE must be generic or upstox_v3")
+        if self.upstox_mode not in {"ltpc", "full", "full_d30"}:
+            raise ValueError("UPSTOX_MODE must be ltpc, full or full_d30")
         if self.smtp_port < 1 or self.smtp_port > 65535:
             raise ValueError("SMTP_PORT must be between 1 and 65535")
         if self.auth_cookie_samesite.lower() not in {"lax", "strict", "none"}:
-            raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict, or none")
+            raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict or none")
         if self.app_env.lower() == "production":
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
@@ -115,6 +124,7 @@ class Settings(BaseSettings):
                 raise ValueError("SMTP email delivery must be configured in production because email verification is enabled")
             if self.auth_cookie_samesite.lower() == "none" and not self.auth_cookie_secure:
                 raise ValueError("SameSite=None requires a Secure cookie")
+
 
 settings = Settings()
 settings.validate_runtime()

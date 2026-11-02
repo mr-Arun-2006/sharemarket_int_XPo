@@ -66,12 +66,22 @@ class LiveTickRequest(BaseModel):
 
 @router.get("/status")
 async def live_status():
+    provider_type = settings.live_provider_type.strip().lower()
+    if provider_type == "upstox_v3":
+        provider_configured = bool(
+            settings.upstox_access_token and settings.upstox_instrument_keys.strip()
+        )
+    else:
+        provider_configured = bool(settings.live_provider_url)
+
     return {
         "status": "connected" if live_hub.client_count else "idle",
         "clients": live_hub.client_count,
         "transport": "websocket",
-        "provider_configured": bool(settings.live_provider_url),
+        "provider_type": provider_type,
+        "provider_configured": provider_configured,
         "provider_running": live_provider.running,
+        "provider_connected": live_provider.connected,
         "redis_configured": bool(settings.redis_url),
         "redis_connected": redis_live_broker.client is not None,
         "max_connections": settings.live_max_connections,

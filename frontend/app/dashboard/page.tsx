@@ -20,6 +20,29 @@ type IndexQuote = {
   data_status: string;
 };
 
+type EODMover = {
+  symbol: string;
+  name?: string | null;
+  close?: number | null;
+  change_pct?: number | null;
+};
+
+type EODExchange = {
+  exchange: "NSE" | "BSE";
+  data_status: string;
+  trade_date: string | null;
+  records: number;
+  positive: number;
+  negative: number;
+  unchanged: number;
+  breadth_pct: number | null;
+  top_gainers: EODMover[];
+  top_losers: EODMover[];
+  source?: string;
+  fetched_at?: string | null;
+  ingestion_status?: string;
+};
+
 type Tick = {
   exchange: "NSE" | "BSE";
   symbol: string;
@@ -29,22 +52,100 @@ type Tick = {
   as_of?: string;
 };
 
+type LiveProviderStatus = {
+  provider_configured: boolean;
+  provider_running: boolean;
+  provider_connected: boolean;
+  provider_type: string;
+  status: string;
+};
+
+function formatPercent(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function EODCard({ item, exchange }: { item: EODExchange | undefined; exchange: "NSE" | "BSE" }) {
+  const availableItem =
+    item && item.records > 0 && item.trade_date ? item : null;
+  const available = availableItem !== null;
+
+  return (
+    <article className="panel">
+      <div className="section-title">
+        <div>
+          <div className="eyebrow">{exchange} · End of day</div>
+          <h2>{availableItem ? availableItem.trade_date : "No EOD dataset"}</h2>
+        </div>
+        <span className="caption">{available ? "Stored EOD" : "Unavailable"}</span>
+      </div>
+      <div className="metric">{availableItem ? availableItem.records.toLocaleString() : "--"}</div>
+      <div className="caption">Securities in latest session</div>
+      <div className="stats-row">
+        <span>Advancers: {availableItem ? availableItem.positive : "--"}</span>
+        <span>Decliners: {availableItem ? availableItem.negative : "--"}</span>
+        <span>Unchanged: {availableItem ? availableItem.unchanged : "--"}</span>
+        <span>Breadth: {availableItem ? formatPercent(availableItem.breadth_pct) : "--"}</span>
+      </div>
+      {availableItem?.fetched_at && (
+        <p className="caption">
+          Ingested {new Date(availableItem.fetched_at).toLocaleString()}
+        </p>
+      )}
+      {availableItem?.source && (
+        <p className="caption">Source: {availableItem.source}</p>
+      )}
+      {!available && (
+        <p className="muted">
+          This exchange has no stored EOD session yet. No live price is substituted.
+        </p>
+      )}
+    </article>
+  );
+}
+
 export default function DashboardPage() {
   const [connection, setConnection] = useState("connecting");
   const [ticks, setTicks] = useState<Record<string, Tick>>({});
   const [indices, setIndices] = useState<IndexQuote[]>([]);
+  const [eod, setEod] = useState<EODExchange[]>([]);
+  const [eodError, setEodError] = useState("");
+  const [providerStatus, setProviderStatus] = useState<LiveProviderStatus | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(0);
 
   useEffect(() => {
     let active = true;
+
+    apiFetch<{ exchanges: EODExchange[] }>("/api/v1/market/eod/overview")
+      .then((data) => {
+        if (active) {
+          setEod(data.exchanges || []);
+          setEodError("");
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setEod([]);
+          setEodError(error instanceof Error ? error.message : "Unable to load EOD data");
+        }
+      });
+
     apiFetch<{ indices: IndexQuote[] }>("/api/v1/market/index/overview")
       .then((data) => {
         if (active) setIndices(data.indices || []);
       })
       .catch(() => {
         if (active) setIndices([]);
+      });
+
+    apiFetch<LiveProviderStatus>("/api/v1/live/status")
+      .then((data) => {
+        if (active) setProviderStatus(data);
+      })
+      .catch(() => {
+        if (active) setProviderStatus(null);
       });
 
     const connect = async () => {
@@ -76,7 +177,7 @@ export default function DashboardPage() {
 
       socket.onopen = () => {
         reconnectAttempt.current = 0;
-        if (active) setConnection("live");
+        if (active) setConnection("connected");
       };
 
       socket.onclose = async (event) => {
@@ -133,6 +234,8 @@ export default function DashboardPage() {
 
   const nseIndex = indices.find((item) => item.exchange === "NSE");
   const bseIndex = indices.find((item) => item.exchange === "BSE");
+  const nseEod = eod.find((item) => item.exchange === "NSE");
+  const bseEod = eod.find((item) => item.exchange === "BSE");
 
   const movers = useMemo(
     () =>
@@ -146,14 +249,25 @@ export default function DashboardPage() {
     [ticks],
   );
 
+  const providerLabel = !providerStatus
+    ? "Provider status unavailable"
+    : providerStatus.provider_connected
+      ? `${providerStatus.provider_type} feed connected`
+      : providerStatus.provider_running
+        ? "Provider worker active · reconnecting"
+        : providerStatus.provider_configured
+          ? "Provider configured · worker not running"
+          : "Provider not configured";
+
   return (
     <AppShell>
       <section className="page-heading">
         <div>
-          <div className="eyebrow">Dashboard</div>
-          <h1>Market monitor</h1>
+          <div className="eyebrow">Dashboard · EOD intelligence first</div>
+          <h1>Market intelligence</h1>
           <p className="lead">
-            Live prices first. Deep EOD intelligence is the main analysis layer.
+            Completed NSE/BSE sessions drive market diagnosis and AI explanations.
+            Live prices are a separate, secondary monitoring feed.
           </p>
         </div>
         <Link href="/ai/market" className="button primary">
@@ -161,23 +275,81 @@ export default function DashboardPage() {
         </Link>
       </section>
 
-      <section className="metric-grid">
+      <section className="panel">
+        <div className="section-title">
+          <div>
+            <div className="eyebrow">Primary data layer</div>
+            <h2>Latest completed trading session</h2>
+          </div>
+          <Link href="/markets" className="top-action">
+            Full market overview
+          </Link>
+        </div>
+        {eodError && <div className="error">{eodError}</div>}
+        <div className="metric-grid">
+          <EODCard item={nseEod} exchange="NSE" />
+          <EODCard item={bseEod} exchange="BSE" />
+        </div>
+        <div className="caption" style={{ marginTop: 12 }}>
+          EOD figures are used for market breadth, regime classification,
+          historical indicators and AI analysis. Missing sessions remain
+          unavailable; live ticks are never used as an EOD replacement.
+        </div>
+        <div className="grid-2" style={{ marginTop: 18 }}>
+          <article>
+            <div className="eyebrow">NSE top gainers</div>
+            {nseEod?.top_gainers?.length ? (
+              <div className="evidence-list">
+                {nseEod.top_gainers.slice(0, 5).map((item) => (
+                  <div key={item.symbol}>
+                    <strong>{item.symbol}</strong>
+                    <span> · {formatPercent(item.change_pct)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No NSE EOD movers available.</p>
+            )}
+          </article>
+          <article>
+            <div className="eyebrow">NSE top losers</div>
+            {nseEod?.top_losers?.length ? (
+              <div className="evidence-list">
+                {nseEod.top_losers.slice(0, 5).map((item) => (
+                  <div key={item.symbol}>
+                    <strong>{item.symbol}</strong>
+                    <span> · {formatPercent(item.change_pct)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No NSE EOD movers available.</p>
+            )}
+          </article>
+        </div>
+      </section>
+
+      <section className="metric-grid" style={{ marginTop: 18 }}>
         {[
           [
-            "NSE Index",
+            "NSE Index EOD",
             nseIndex?.close == null ? "--" : nseIndex.close.toLocaleString(),
             nseIndex?.symbol
               ? nseIndex.symbol + " · " + (nseIndex.trade_date ?? "--")
-              : "Index source unavailable",
+              : "Index source not configured",
           ],
           [
-            "BSE Index",
+            "BSE Index EOD",
             bseIndex?.close == null ? "--" : bseIndex.close.toLocaleString(),
             bseIndex?.symbol
               ? bseIndex.symbol + " · " + (bseIndex.trade_date ?? "--")
-              : "Index source unavailable",
+              : "Index source not configured",
           ],
-          ["Live movers", String(movers.length), "Adaptive market ranking"],
+          [
+            "EOD sessions",
+            String([nseEod, bseEod].filter((item) => item && item.records > 0).length),
+            "Exchanges with stored EOD data",
+          ],
         ].map(([title, value, status]) => (
           <article className="panel" key={title}>
             <div className="muted">{title}</div>
@@ -190,15 +362,19 @@ export default function DashboardPage() {
       <section className="panel" style={{ marginTop: 18 }}>
         <div className="section-title">
           <div>
-            <div className="eyebrow">Live Market</div>
-            <h2>Relevant movers</h2>
+            <div className="eyebrow">Secondary data layer</div>
+            <h2>Live market monitor</h2>
           </div>
-          <span className="caption">
-            WebSocket: {connection}
-          </span>
+          <span className="caption">App WebSocket: {connection}</span>
         </div>
+        <p className="muted">
+          {providerLabel}. The app socket can be connected even when an external
+          broker feed has not been configured.
+        </p>
         {movers.length === 0 ? (
-          <div className="empty">Waiting for live market ticks.</div>
+          <div className="empty">
+            No live ticks received. EOD analysis remains available independently.
+          </div>
         ) : (
           <div className="table-wrap">
             <table>
@@ -217,7 +393,7 @@ export default function DashboardPage() {
                     <td>{tick.symbol}</td>
                     <td>{tick.exchange}</td>
                     <td>{tick.price ?? "--"}</td>
-                    <td>{tick.change_pct?.toFixed(2)}%</td>
+                    <td>{formatPercent(tick.change_pct)}</td>
                     <td>
                       {tick.as_of
                         ? new Date(tick.as_of).toLocaleTimeString()
@@ -232,15 +408,15 @@ export default function DashboardPage() {
       </section>
 
       <section className="panel" style={{ marginTop: 18 }}>
-        <div className="eyebrow">EOD Intelligence</div>
-        <h2>Understand what happened after the session</h2>
+        <div className="eyebrow">Research workspace</div>
+        <h2>Explain the completed market session</h2>
         <p className="muted">
-          NSE-first analysis with BSE comparison, sectors, breadth,
-          institutional activity, major events, regime detection and
-          evidence-linked explanation.
+          Generate NSE-first diagnosis with breadth, sectors, institutional
+          activity, corporate events, regime detection, technical indicators
+          and evidence-linked AI explanations.
         </p>
         <Link href="/ai/market" className="button primary">
-          Open EOD workspace
+          Open EOD intelligence
         </Link>
       </section>
     </AppShell>

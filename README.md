@@ -172,3 +172,37 @@ Expose /api/v1/health/live for liveness and /api/v1/health/ready for readiness, 
 This branch adds database indexes and TTLs, bounded ingestion uploads, bounded AI context, heavy-endpoint rate limits, dependency validation, application import validation, frontend security headers, and regression coverage for stock intelligence.
 
 BSE EOD and optional index/context feeds remain deployment configuration because permitted source access varies by provider.
+
+
+## Live market provider: Upstox V3
+
+The live dashboard supports an optional Upstox Market Data Feed V3 adapter. It connects through the Upstox authorization endpoint, subscribes to configured instrument keys, decodes the binary Protobuf feed, and passes normalized ticks into the existing live market pipeline. The EOD ingestion and AI diagnosis paths do not depend on this provider.
+
+Configure these backend environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `LIVE_PROVIDER_TYPE` | Set to `upstox_v3` to enable the Upstox adapter; defaults to `generic`. |
+| `UPSTOX_ACCESS_TOKEN` | User-specific Upstox OAuth access token. Store as a deployment secret. |
+| `UPSTOX_INSTRUMENT_KEYS` | Comma-separated instrument keys to subscribe to, such as index or equity keys from the Upstox instrument master. |
+| `UPSTOX_SYMBOL_MAP_JSON` | Optional JSON object that maps equity instrument keys to readable symbols and exchange names. |
+| `UPSTOX_MODE` | `ltpc` for price/previous-close ticks, or `full` / `full_d30` where supported by the account and feed limits. |
+
+Example symbol map (replace the instrument key with the current key from the Upstox instrument master):
+
+```json
+{
+  "NSE_EQ|INE002A01018": {
+    "exchange": "NSE",
+    "symbol": "RELIANCE"
+  }
+}
+```
+
+Upstox instrument keys can change with instrument-master updates. Resolve and validate keys against the current instrument master instead of hardcoding them into the application. The adapter's default `ltpc` mode is intended for a watchlist/dashboard, not full market depth. A valid access token and configured instrument keys are required before the provider worker starts.
+
+Official references:
+- [Upstox Market Data Feed V3](https://upstox.com/developer/api-documentation/v3/get-market-data-feed/)
+- [Upstox Market Data Feed Authorize V3](https://upstox.com/developer/api-documentation/get-market-data-feed-authorize-v3/)
+
+The live feed is a separate broker-authenticated source. It is not treated as a substitute for official NSE/BSE EOD files, and the app should be deployed for personal/internal use only unless the provider's data terms permit the intended distribution.
