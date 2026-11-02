@@ -1,36 +1,89 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "../../lib/api";
+import { useRouter } from "next/navigation";
+import {
+  checkFirebaseEmailVerified,
+  exchangeFirebaseSession,
+  getFirebaseSessionEmail,
+  sendFirebaseVerificationEmail,
+} from "../../lib/firebase-auth";
 
 export default function VerifyPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  useEffect(() => {
+    setEmail(getFirebaseSessionEmail());
+  }, []);
+
+  async function completeVerification() {
+    setLoading(true);
+    setMessage("");
     try {
-      await apiFetch("/api/v1/auth/verify", { method:"POST", body:JSON.stringify({email, otp}) });
-      setMessage("Email verified. You can now sign in.");
+      const verified = await checkFirebaseEmailVerified();
+      if (!verified) {
+        setMessage("Firebase has not marked this email as verified yet. Open the latest verification email, then try again.");
+        return;
+      }
+
+      const result = await exchangeFirebaseSession();
+      if (result.requires_2fa && result.challenge_id) {
+        sessionStorage.setItem("sharem_2fa_challenge", result.challenge_id);
+        router.push("/2fa");
+        return;
+      }
+      if (result.access_token) {
+        router.push("/dashboard");
+        return;
+      }
+      throw new Error("The backend did not create an application session.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Verification failed");
+      setMessage(error instanceof Error ? error.message : "Unable to complete verification");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resendVerification() {
+    setResending(true);
+    setMessage("");
+    try {
+      await sendFirebaseVerificationEmail();
+      setMessage("A new Firebase verification email has been sent.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to resend verification email");
+    } finally {
+      setResending(false);
     }
   }
 
   return (
     <main className="shell">
-      <nav className="nav"><div className="brand">ShareM Int Xpo</div><Link className="button" href="/login">Login</Link></nav>
-      <section className="card" style={{maxWidth:520, margin:"40px auto"}}>
-        <div className="eyebrow">Verification</div>
-        <h2>Verify email</h2>
-        <form onSubmit={submit}>
-          <input value={email} onChange={(e)=>setEmail(e.target.value)} type="email" placeholder="Email" required style={{width:"100%",padding:12,margin:"8px 0 16px",background:"var(--surface-2)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:10}} />
-          <input value={otp} onChange={(e)=>setOtp(e.target.value)} inputMode="numeric" pattern="\d{6}" maxLength={6} placeholder="6-digit OTP" required style={{width:"100%",padding:12,margin:"8px 0 16px",background:"var(--surface-2)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:10}} />
-          <button className="button primary">Verify email</button>
-        </form>
-        {message && <p className="muted" style={{marginTop:16}}>{message}</p>}
+      <nav className="nav">
+        <div className="brand">ShareM Int Xpo</div>
+        <Link className="button" href="/login">Sign in</Link>
+      </nav>
+      <section className="card" style={{ maxWidth: 520, margin: "40px auto" }}>
+        <div className="eyebrow">Firebase email verification</div>
+        <h2>Verify your email</h2>
+        <p className="muted">
+          {email ? "A verification link was sent to " + email + "." : "Open the verification link sent to your email address."}
+          {" "}After clicking the link, return here and confirm verification.
+        </p>
+        <div className="actions">
+          <button className="button primary" disabled={loading} onClick={completeVerification}>
+            {loading ? "Checking..." : "I have verified my email"}
+          </button>
+          <button className="button" disabled={resending || !email} onClick={resendVerification}>
+            {resending ? "Sending..." : "Resend email"}
+          </button>
+        </div>
+        {message && <p className="muted" style={{ marginTop: 16 }}>{message}</p>}
       </section>
     </main>
   );

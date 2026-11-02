@@ -1,38 +1,34 @@
 from datetime import datetime, timedelta, timezone
-import hashlib
-import hmac
+import asyncio
+import logging
 import secrets
 
-from pymongo import ReturnDocument
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
-from pymongo.errors import DuplicateKeyError
+from fastapi.security import HTTPAuthorizationCredentials
+from pymongo import ReturnDocument
 
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    hash_password,
-    hash_token,
-    verify_password,
-)
-from app.core.totp import build_otpauth_url, generate_secret, verify_totp
+from app.api.deps.auth import bearer, get_current_user
+from app.api.deps.rate_limit import rate_limit
 from app.core.config import settings
+from app.core.security import create_access_token, create_refresh_token, hash_token
+from app.core.totp import build_otpauth_url, generate_secret, verify_totp
 from app.db.mongo import get_database
 from app.schemas.auth import (
     AuthResponse,
-    LoginRequest,
     LoginResponse,
     RefreshRequest,
-    RegisterRequest,
     TwoFactorCodeRequest,
     TwoFactorVerifyRequest,
-    VerifyRequest,
-    EmailRequest,
 )
-from app.api.deps.auth import get_current_user
-from app.api.deps.rate_limit import enforce_rate_limit, rate_limit
 from app.services.audit import record_audit
-from app.services.email_delivery import send_verification_email
+from app.services.firebase_auth import (
+    FirebaseAccountLinkError,
+    FirebaseAuthConfigurationError,
+    sync_firebase_user,
+    verify_firebase_id_token,
+)
 
+logger = logging.getLogger("sharem.auth")
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
@@ -86,212 +82,109 @@ async def _issue_session(db, user: dict, response: Response) -> AuthResponse:
     return AuthResponse(access_token=access)
 
 
-@router.post(
-    "/register",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[rate_limit("auth.register", 5, 900)],
-)
-async def register(payload: RegisterRequest):
-    db = get_database()
-    email = str(payload.email).lower()
-    if await db.user.find_one({"email_normalized": email}):
-        raise HTTPException(409, "Account already exists")
-
-    user_id = secrets.token_hex(16)
-    otp = f"{secrets.randbelow(1_000_000):06d}"
+async def _create_two_factor_challenge(db, user: dict) -> LoginResponse:
+    challenge_id = secrets.token_urlsafe(32)
     now = _now()
-    try:
-        await db.user.insert_one(
-            {
-                "user_id": user_id,
-                "email": email,
-                "email_normalized": email,
-                "password_hash": hash_password(payload.password),
-                "role": "user",
-                "ai_language": "en",
-                "email_verified": False,
-                "two_factor_enabled": False,
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-    except DuplicateKeyError as exc:
-        raise HTTPException(409, "Account already exists") from exc
     await db.auth_challenges.insert_one(
         {
-            "user_id": user_id,
-            "email": email,
-            "purpose": "email_verification",
-            "otp_hash": hash_token(otp),
-            "attempts": 0,
-            "created_at": now,
-            "expires_at": now + timedelta(minutes=10),
-        }
-    )
-    try:
-        await send_verification_email(email, otp)
-    except Exception as exc:
-        await record_audit(
-            "auth.verification_email_failed",
-            user_id=user_id,
-            target_type="user",
-            target_id=user_id,
-        )
-        if settings.app_env.lower() == "production":
-            await db.auth_challenges.delete_many(
-                {"user_id": user_id, "purpose": "email_verification"}
-            )
-            raise HTTPException(503, "Email verification service is temporarily unavailable") from exc
-
-    await record_audit(
-        "auth.register",
-        user_id=user_id,
-        target_type="user",
-        target_id=user_id,
-    )
-    response = {"status": "verification_required", "user_id": user_id}
-    if settings.app_env.lower() == "development":
-        response["development_otp"] = otp
-    return response
-
-
-@router.post("/verify", dependencies=[rate_limit("auth.verify", 10, 600)])
-async def verify(payload: VerifyRequest):
-    db = get_database()
-    email = str(payload.email).lower()
-    challenge = await db.auth_challenges.find_one_and_update(
-        {
-            "email": email,
-            "purpose": "email_verification",
-            "expires_at": {"$gt": _now()},
-            "attempts": {"$lt": 5},
-        },
-        {"$inc": {"attempts": 1}},
-        return_document=ReturnDocument.AFTER,
-    )
-    if not challenge or not secrets.compare_digest(
-        hash_token(payload.otp), challenge["otp_hash"]
-    ):
-        raise HTTPException(400, "Invalid or expired verification code")
-
-    await db.user.update_one(
-        {"email_normalized": email},
-        {"$set": {"email_verified": True, "updated_at": _now()}},
-    )
-    await db.auth_challenges.delete_many(
-        {"user_id": challenge["user_id"], "purpose": "email_verification"}
-    )
-    await record_audit(
-        "auth.verify_email",
-        user_id=challenge["user_id"],
-        target_type="user",
-        target_id=challenge["user_id"],
-    )
-    return {"status": "verified"}
-
-
-@router.post(
-    "/resend-verification",
-    dependencies=[rate_limit("auth.resend_verification", 3, 900)],
-)
-async def resend_verification(payload: EmailRequest):
-    db = get_database()
-    email = str(payload.email).lower()
-    user = await db.user.find_one(
-        {"email_normalized": email},
-        {"_id": 0, "user_id": 1, "email_verified": 1},
-    )
-
-    # Return the same response for unknown addresses to avoid account enumeration.
-    response = {"status": "verification_sent"}
-    if not user or user.get("email_verified"):
-        return response
-
-    otp = f"{secrets.randbelow(1_000_000):06d}"
-    now = _now()
-    await db.auth_challenges.delete_many(
-        {"user_id": user["user_id"], "purpose": "email_verification"}
-    )
-    await db.auth_challenges.insert_one(
-        {
+            "challenge_id": challenge_id,
             "user_id": user["user_id"],
-            "email": email,
-            "purpose": "email_verification",
-            "otp_hash": hash_token(otp),
+            "purpose": "login_2fa",
             "attempts": 0,
             "created_at": now,
-            "expires_at": now + timedelta(minutes=10),
+            "expires_at": now + timedelta(minutes=5),
         }
     )
-    try:
-        await send_verification_email(email, otp)
-    except Exception as exc:
-        if settings.app_env.lower() == "development":
-            response["development_otp"] = otp
-            return response
-        await db.auth_challenges.delete_many(
-            {"user_id": user["user_id"], "purpose": "email_verification"}
-        )
-        raise HTTPException(503, "Email verification service is temporarily unavailable") from exc
-
-    return response
+    return LoginResponse(
+        status="two_factor_required",
+        challenge_id=challenge_id,
+        requires_2fa=True,
+    )
 
 
 @router.post(
-    "/login",
+    "/firebase/exchange",
     response_model=LoginResponse,
-    dependencies=[rate_limit("auth.login", 10, 60)],
+    dependencies=[rate_limit("auth.firebase_exchange", 15, 60)],
 )
-async def login(payload: LoginRequest, response: Response):
+async def firebase_exchange(
+    response: Response,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Exchange a verified Firebase ID token for the app's short-lived API session."""
+    if credentials is None:
+        raise HTTPException(401, "Firebase ID token is required")
+
+    try:
+        claims = await asyncio.to_thread(
+            verify_firebase_id_token,
+            credentials.credentials,
+        )
+    except FirebaseAuthConfigurationError as exc:
+        logger.error("Firebase authentication is not configured: %s", exc)
+        raise HTTPException(503, "Firebase authentication is not configured") from exc
+    except Exception as exc:
+        logger.warning("Firebase ID token verification failed: %s", type(exc).__name__)
+        raise HTTPException(401, "Invalid or expired Firebase ID token") from exc
+
+    if claims.get("email_verified") is not True:
+        raise HTTPException(403, "Verify your email address before signing in")
+
     db = get_database()
-    email = str(payload.email).lower()
-    user = await db.user.find_one({"email_normalized": email})
-    if not user or not verify_password(payload.password, user["password_hash"]):
-        # Add a per-account failure bucket so distributed attempts against one
-        # account cannot bypass the existing per-IP limit. HMAC prevents raw
-        # email addresses from being stored in the rate-limit collection.
-        account_key = hmac.new(
-            settings.jwt_secret.encode(),
-            email.encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        await enforce_rate_limit(
-            "auth.login.account_failure",
-            f"email:{account_key}",
-            10,
-            900,
-        )
-        raise HTTPException(401, "Invalid email or password")
-    if not user.get("email_verified"):
-        raise HTTPException(403, "Email verification required")
+    try:
+        user = await sync_firebase_user(db, claims)
+    except FirebaseAccountLinkError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(401, "Firebase identity is missing a verified email") from exc
 
-    if user.get("two_factor_enabled"):
-        challenge_id = secrets.token_urlsafe(32)
-        await db.auth_challenges.insert_one(
-            {
-                "challenge_id": challenge_id,
-                "user_id": user["user_id"],
-                "purpose": "login_2fa",
-                "attempts": 0,
-                "created_at": _now(),
-                "expires_at": _now() + timedelta(minutes=5),
-            }
-        )
-        return LoginResponse(
-            status="two_factor_required",
-            challenge_id=challenge_id,
-            requires_2fa=True,
-        )
-
-    tokens = await _issue_session(db, user, response)
     await record_audit(
-        "auth.login",
+        "auth.firebase_login",
         user_id=user["user_id"],
         target_type="session",
     )
+
+    # Preserve the application's existing authenticator-app MFA for users who
+    # had enabled it before Firebase became the identity provider.
+    if user.get("two_factor_enabled"):
+        return await _create_two_factor_challenge(db, user)
+
+    tokens = await _issue_session(db, user, response)
     return LoginResponse(
         status="authenticated",
         access_token=tokens.access_token,
+    )
+
+
+@router.post("/register", status_code=status.HTTP_410_GONE)
+async def legacy_register_disabled():
+    raise HTTPException(
+        status.HTTP_410_GONE,
+        "Registration is managed by Firebase Authentication. Use the frontend registration page.",
+    )
+
+
+@router.post("/login", status_code=status.HTTP_410_GONE)
+async def legacy_login_disabled():
+    raise HTTPException(
+        status.HTTP_410_GONE,
+        "Login is managed by Firebase Authentication. Use the frontend login page.",
+    )
+
+
+@router.post("/verify", status_code=status.HTTP_410_GONE)
+async def legacy_email_otp_disabled():
+    raise HTTPException(
+        status.HTTP_410_GONE,
+        "Email verification is managed by Firebase Authentication.",
+    )
+
+
+@router.post("/resend-verification", status_code=status.HTTP_410_GONE)
+async def legacy_resend_email_otp_disabled():
+    raise HTTPException(
+        status.HTTP_410_GONE,
+        "Email verification emails are managed by Firebase Authentication.",
     )
 
 
@@ -426,8 +319,8 @@ async def refresh(
     refresh_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     x_requested_with: str | None = Header(default=None),
 ):
-    # The custom header makes browser refresh a non-simple CORS request and
-    # blocks cross-site CSRF attempts against the cookie-based session rotation.
+    # The custom header makes this a non-simple CORS request and blocks
+    # cross-site CSRF attempts against cookie-based session rotation.
     if x_requested_with != "ShareM-Int-Xpo":
         raise HTTPException(403, "Refresh request rejected")
 
@@ -437,8 +330,6 @@ async def refresh(
 
     db = get_database()
     now = _now()
-    # Rotate the refresh session atomically so concurrent refresh requests
-    # cannot both redeem the same refresh token.
     session = await db.sessions.find_one_and_update(
         {
             "token_hash": hash_token(token),

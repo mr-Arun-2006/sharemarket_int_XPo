@@ -69,10 +69,8 @@ def test_production_config_rejects_wildcard_hosts():
         docs_enabled=False,
         auth_cookie_secure=True,
         auth_cookie_samesite="lax",
-        smtp_host="smtp.example.com",
-        smtp_user="user",
-        smtp_password="password",
-        smtp_from="ci@example.com",
+        firebase_project_id="sharem-int-xpo-test",
+        firebase_service_account_json_base64="e30=",
     )
     with pytest.raises(ValueError, match="Wildcard ALLOWED_HOSTS"):
         cfg.validate_runtime()
@@ -90,10 +88,8 @@ def _valid_production_settings(**overrides):
         "docs_enabled": False,
         "auth_cookie_secure": True,
         "auth_cookie_samesite": "lax",
-        "smtp_host": "smtp.example.com",
-        "smtp_user": "user",
-        "smtp_password": "password",
-        "smtp_from": "ci@example.com",
+        "firebase_project_id": "sharem-int-xpo-test",
+        "firebase_service_account_json_base64": "e30=",
     }
     values.update(overrides)
     return Settings(**values)
@@ -215,3 +211,9 @@ def test_custom_role_wildcard_does_not_grant_implicit_permissions():
         "portfolio.read",
     )
     assert not _role_has_permission(None, "portfolio.read")
+
+
+def test_production_config_does_not_require_smtp():
+    cfg = _valid_production_settings()
+    cfg.validate_runtime()
+    assert cfg.firebase_project_id == "sharem-int-xpo-test"

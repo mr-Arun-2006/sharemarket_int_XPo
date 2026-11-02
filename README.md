@@ -125,6 +125,25 @@ Frontend hardening includes a shared API client with one-shot access-token refre
 Provider credentials are intentionally external configuration. Deployment is not executed by the repository CI.
 ### Authentication hardening
 
+Firebase Authentication is the identity provider for frontend registration, email/password login, and email verification. The backend verifies Firebase ID tokens with the Firebase Admin SDK, then creates the application's own short-lived API token and HttpOnly refresh-cookie session. MongoDB remains the application profile and authorization database; existing roles, AI preferences, and authenticator-app MFA are preserved when an existing MongoDB profile is linked by its verified email.
+
+The frontend uses Firebase Authentication's HTTPS REST API. Enable **Email/Password** in Firebase Authentication > Sign-in method, configure the email verification template, and add the frontend Vercel domain under Authentication > Settings > Authorized domains.
+
+Frontend environment:
+- `NEXT_PUBLIC_FIREBASE_API_KEY` — Firebase web API key (public browser configuration). The Firebase project is identified by this API key; the project ID is a backend-only setting.
+- `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_WS_BASE_URL` — the backend's HTTPS and WSS origins.
+
+Backend secrets:
+- `FIREBASE_PROJECT_ID` — must match the service account project.
+- `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` — base64-encoded Firebase service-account JSON. Keep it in Vercel backend environment variables only; never commit the JSON or its private key.
+
+To encode the downloaded service-account JSON locally on PowerShell:
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".\firebase-service-account.json"))
+```
+
+The old custom email-OTP registration/login API routes return HTTP 410 and no longer send SMTP messages. SMTP credentials are not required for Firebase email verification. The app still uses its own backend refresh cookie to preserve the existing MongoDB session revocation and role-permission checks.
+
 Access tokens are kept only in browser memory. Refresh tokens are never persisted in JavaScript storage; the backend issues them as HttpOnly cookies. Production deployments should set:
 
     APP_ENV=production
@@ -162,6 +181,8 @@ ALLOWED_HOSTS=<api-domain>
 TRUST_PROXY_HEADERS=true
 MONGODB_URI=<managed-mongodb-uri>
 JWT_SECRET=<long-random-secret>
+FIREBASE_PROJECT_ID=<firebase-project-id>
+FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=<base64-service-account-json>
 REDIS_URL=<managed-redis-url>
 AI_BASE_URL=<provider-base-or-chat-completions-url>
 AI_API_KEY=<provider-secret>
@@ -206,3 +227,20 @@ Official references:
 - [Upstox Market Data Feed Authorize V3](https://upstox.com/developer/api-documentation/get-market-data-feed-authorize-v3/)
 
 The live feed is a separate broker-authenticated source. It is not treated as a substitute for official NSE/BSE EOD files, and the app should be deployed for personal/internal use only unless the provider's data terms permit the intended distribution.
+
+
+## Firebase Authentication migration
+New Firebase registrations create MongoDB application profiles on the first successful, email-verified Firebase token exchange. Existing profiles are linked by their normalized, verified email address; their existing `user_id`, role, AI language, and TOTP MFA settings are retained. A profile already linked to a different Firebase UID is rejected rather than reassigned. The backend enforces a unique sparse index on `firebase_uid`.
+
+Firebase REST API and Admin SDK references:
+- https://firebase.google.com/docs/reference/rest/auth
+- https://firebase.google.com/docs/auth/admin/verify-id-tokens
+- https://firebase.google.com/docs/admin/setup
+
+
+### Vercel project roots
+- Frontend Vercel project: set Root Directory to `frontend` (Next.js).
+- Backend Vercel project: set Root Directory to `backend` (FastAPI). The `backend/index.py` file exports the ASGI application for Vercel's Python runtime.
+- Add Firebase client variables only to the frontend project. Add `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`, `MONGODB_URI`, and `JWT_SECRET` only to the backend project.
+
+The EOD scheduler currently uses APScheduler inside the FastAPI process. For Vercel serverless deployment, set `DATA_SCHEDULER_ENABLED=false`; do not rely on an in-process scheduler for persistent daily execution. A separate Vercel Cron-triggered ingestion endpoint is still required for fully automatic EOD ingestion.

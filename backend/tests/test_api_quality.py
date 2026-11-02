@@ -48,3 +48,18 @@ def test_oversized_eod_upload_is_rejected():
         return None
 
     assert asyncio.run(run()) == 413
+
+
+def test_legacy_smtp_auth_routes_are_disabled():
+    async def run():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://localhost",
+        ) as client:
+            register = await client.post("/api/v1/auth/register")
+            login = await client.post("/api/v1/auth/login")
+            verify = await client.post("/api/v1/auth/verify")
+            return register.status_code, login.status_code, verify.status_code
+
+    assert asyncio.run(run()) == (410, 410, 410)
