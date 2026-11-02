@@ -4,11 +4,16 @@ import base64
 import json
 from datetime import datetime, timezone
 from typing import Any
+from threading import Lock
 
 import firebase_admin
 from firebase_admin import auth, credentials
 
 from app.core.config import settings
+
+
+_firebase_app = None
+_firebase_init_lock = Lock()
 
 
 class FirebaseAuthConfigurationError(RuntimeError):
@@ -20,6 +25,7 @@ class FirebaseAccountLinkError(RuntimeError):
 
 
 def _initialize_firebase_app():
+    global _firebase_app
     project_id = settings.firebase_project_id.strip()
     encoded_credentials = settings.firebase_service_account_json_base64.strip()
     if not project_id or not encoded_credentials:
@@ -27,41 +33,48 @@ def _initialize_firebase_app():
             "Firebase Admin credentials are not configured on the backend"
         )
 
-    try:
-        service_account_info = json.loads(
-            base64.b64decode(encoded_credentials, validate=True).decode("utf-8")
-        )
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise FirebaseAuthConfigurationError(
-            "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 is not valid base64-encoded JSON"
-        ) from exc
+    with _firebase_init_lock:
+        if _firebase_app is not None:
+            if _firebase_app.project_id != project_id:
+                raise FirebaseAuthConfigurationError(
+                    "An initialized Firebase Admin app uses a different project"
+                )
+            return _firebase_app
 
-    if service_account_info.get("project_id") != project_id:
-        raise FirebaseAuthConfigurationError(
-            "FIREBASE_PROJECT_ID does not match the Firebase service account project"
-        )
-
-    try:
-        app = firebase_admin.get_app()
-        if app.project_id != project_id:
-            raise FirebaseAuthConfigurationError(
-                "An initialized Firebase Admin app uses a different project"
-            )
-        return app
-    except ValueError:
         try:
-            credential = credentials.Certificate(service_account_info)
-            return firebase_admin.initialize_app(
-                credential,
-                options={"projectId": project_id},
+            service_account_info = json.loads(
+                base64.b64decode(encoded_credentials, validate=True).decode("utf-8")
             )
-        except FirebaseAuthConfigurationError:
-            raise
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise FirebaseAuthConfigurationError(
+                "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 is not valid base64-encoded JSON"
+            ) from exc
+
+        if service_account_info.get("project_id") != project_id:
+            raise FirebaseAuthConfigurationError(
+                "FIREBASE_PROJECT_ID does not match the Firebase service account project"
+            )
+
+        try:
+            try:
+                app = firebase_admin.get_app()
+            except ValueError:
+                credential = credentials.Certificate(service_account_info)
+                app = firebase_admin.initialize_app(
+                    credential,
+                    options={"projectId": project_id},
+                )
         except Exception as exc:
             raise FirebaseAuthConfigurationError(
                 "Firebase Admin could not initialize; check the service account credentials"
             ) from exc
 
+        if app.project_id != project_id:
+            raise FirebaseAuthConfigurationError(
+                "An initialized Firebase Admin app uses a different project"
+            )
+        _firebase_app = app
+        return app
 
 def verify_firebase_id_token(id_token: str) -> dict[str, Any]:
     """Verify signature, issuer, audience, expiry, and revocation with Firebase Admin."""
