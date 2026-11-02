@@ -182,6 +182,8 @@ ALLOWED_HOSTS=<api-domain>
 TRUST_PROXY_HEADERS=true
 MONGODB_URI=<managed-mongodb-uri>
 JWT_SECRET=<long-random-secret>
+FIREBASE_PROJECT_ID=<firebase-project-id>
+FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=<base64-service-account-json>
 REDIS_URL=<managed-redis-url>
 AI_BASE_URL=<provider-base-or-chat-completions-url>
 AI_API_KEY=<provider-secret>
@@ -235,3 +237,11 @@ Firebase REST API and Admin SDK references:
 - https://firebase.google.com/docs/reference/rest/auth
 - https://firebase.google.com/docs/auth/admin/verify-id-tokens
 - https://firebase.google.com/docs/admin/setup
+
+
+### Vercel project roots
+- Frontend Vercel project: set Root Directory to `frontend` (Next.js).
+- Backend Vercel project: set Root Directory to `backend` (FastAPI). The `backend/index.py` file exports the ASGI application for Vercel's Python runtime.
+- Add Firebase client variables only to the frontend project. Add `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`, `MONGODB_URI`, and `JWT_SECRET` only to the backend project.
+
+The EOD scheduler currently uses APScheduler inside the FastAPI process. For Vercel serverless deployment, set `DATA_SCHEDULER_ENABLED=false`; do not rely on an in-process scheduler for persistent daily execution. A separate Vercel Cron-triggered ingestion endpoint is still required for fully automatic EOD ingestion.
