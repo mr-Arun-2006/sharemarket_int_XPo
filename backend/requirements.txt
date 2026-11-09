@@ -5,7 +5,7 @@ pydantic-settings==2.16.2
 pymongo==4.19.0
 firebase-admin==7.7.0
 email-validator==2.3.0
-python-multipart==0.0.32
+python-multipart==0.0.33
 reportlab==5.1.0
 httpx==0.28.1
 APScheduler==3.11.3
